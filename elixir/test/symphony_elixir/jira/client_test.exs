@@ -228,4 +228,91 @@ defmodule SymphonyElixir.Jira.ClientTest do
                {:error, {:jira_api_request, :nxdomain}}
     end
   end
+
+  describe "fetch_candidate_issues/0 (with injected request_fun)" do
+    setup do
+      original_env = Application.get_env(:symphony_elixir, :workflow_config)
+      on_exit(fn -> Application.put_env(:symphony_elixir, :workflow_config, original_env) end)
+
+      Application.put_env(:symphony_elixir, :workflow_config, %{
+        "tracker" => %{
+          "kind" => "jira",
+          "assignee" => "me",
+          "active_states" => ["Todo", "In Progress"],
+          "jira" => %{
+            "site_url" => "https://acme.atlassian.net",
+            "email" => "bot@example.com",
+            "api_token" => "tkn",
+            "project_key" => "ABC"
+          }
+        }
+      })
+
+      :ok
+    end
+
+    test "paginates across multiple pages and merges results" do
+      page1 = %{
+        "startAt" => 0,
+        "maxResults" => 2,
+        "total" => 3,
+        "issues" => [
+          %{"key" => "ABC-1", "fields" => %{"summary" => "a", "status" => %{"name" => "Todo"}}},
+          %{"key" => "ABC-2", "fields" => %{"summary" => "b", "status" => %{"name" => "Todo"}}}
+        ]
+      }
+
+      page2 = %{
+        "startAt" => 2,
+        "maxResults" => 2,
+        "total" => 3,
+        "issues" => [
+          %{"key" => "ABC-3", "fields" => %{"summary" => "c", "status" => %{"name" => "Todo"}}}
+        ]
+      }
+
+      {:ok, agent} = Agent.start_link(fn -> [page1, page2] end)
+
+      request_fun = fn :post, _url, _headers, body ->
+        assert body["jql"] =~ ~s|project = "ABC"|
+        assert body["jql"] =~ "currentUser()"
+        response = Agent.get_and_update(agent, fn [h | t] -> {h, t} end)
+        {:ok, %{status: 200, body: response}}
+      end
+
+      assert {:ok, issues} = Client.fetch_candidate_issues(request_fun: request_fun)
+      assert Enum.map(issues, & &1.id) == ["ABC-1", "ABC-2", "ABC-3"]
+    end
+  end
+
+  describe "fetch_issue_states_by_ids/1" do
+    setup do
+      original_env = Application.get_env(:symphony_elixir, :workflow_config)
+      on_exit(fn -> Application.put_env(:symphony_elixir, :workflow_config, original_env) end)
+
+      Application.put_env(:symphony_elixir, :workflow_config, %{
+        "tracker" => %{
+          "kind" => "jira",
+          "jira" => %{"site_url" => "https://a.atlassian.net", "email" => "e@x", "api_token" => "t", "project_key" => "A"}
+        }
+      })
+
+      :ok
+    end
+
+    test "returns {:ok, []} for empty list without hitting the network" do
+      assert Client.fetch_issue_states_by_ids([], request_fun: fn _, _, _, _ -> flunk("no call") end) ==
+               {:ok, []}
+    end
+
+    test "posts a JQL search with key in (...)" do
+      request_fun = fn :post, _url, _headers, body ->
+        assert body["jql"] =~ ~s|key in ("A-1","A-2")|
+        {:ok, %{status: 200, body: %{"issues" => [%{"key" => "A-1", "fields" => %{"summary" => "s"}}], "startAt" => 0, "total" => 1, "maxResults" => 50}}}
+      end
+
+      assert {:ok, [%{id: "A-1"}]} =
+               Client.fetch_issue_states_by_ids(["A-1", "A-2"], request_fun: request_fun)
+    end
+  end
 end

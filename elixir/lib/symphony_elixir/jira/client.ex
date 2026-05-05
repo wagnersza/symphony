@@ -234,4 +234,90 @@ defmodule SymphonyElixir.Jira.Client do
       _ -> nil
     end
   end
+
+  @issue_page_size 50
+  @search_fields ~w(summary description status priority assignee labels issuelinks created updated)
+
+  @spec fetch_candidate_issues(keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_candidate_issues(opts \\ []) do
+    tracker = Config.settings!().tracker
+    jira = tracker.jira
+
+    if is_nil(jira.project_key) do
+      {:error, :missing_jira_project_key}
+    else
+      jql = build_jql(jira.project_key, tracker.active_states, tracker.assignee)
+      do_search(jql, jira.site_url, 0, [], opts)
+    end
+  end
+
+  @spec fetch_issues_by_states([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issues_by_states(state_names, opts \\ []) when is_list(state_names) do
+    normalized = state_names |> Enum.map(&to_string/1) |> Enum.uniq()
+
+    if normalized == [] do
+      {:ok, []}
+    else
+      tracker = Config.settings!().tracker
+      jira = tracker.jira
+
+      if is_nil(jira.project_key) do
+        {:error, :missing_jira_project_key}
+      else
+        jql = build_jql(jira.project_key, normalized, nil)
+        do_search(jql, jira.site_url, 0, [], opts)
+      end
+    end
+  end
+
+  @spec fetch_issue_states_by_ids([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issue_states_by_ids(ids, opts \\ []) when is_list(ids) do
+    ids = Enum.uniq(ids)
+
+    case ids do
+      [] ->
+        {:ok, []}
+
+      _ ->
+        jira = Config.settings!().tracker.jira
+        keys_clause = ids |> Enum.map(&~s|"#{&1}"|) |> Enum.join(",")
+        jql = "key in (" <> keys_clause <> ") ORDER BY created ASC"
+        do_search(jql, jira.site_url, 0, [], opts)
+    end
+  end
+
+  defp do_search(jql, site_url, start_at, acc, opts) do
+    body = %{
+      "jql" => jql,
+      "startAt" => start_at,
+      "maxResults" => @issue_page_size,
+      "fields" => @search_fields
+    }
+
+    case request(:post, "/search", body, opts) do
+      {:ok,
+       %{
+         "issues" => issues,
+         "startAt" => returned_start,
+         "maxResults" => max_results,
+         "total" => total
+       }}
+      when is_list(issues) ->
+        normalized = Enum.map(issues, &normalize_issue(&1, site_url))
+        new_acc = acc ++ normalized
+        next_start = returned_start + max_results
+
+        if next_start >= total or issues == [] do
+          {:ok, new_acc}
+        else
+          do_search(jql, site_url, next_start, new_acc, opts)
+        end
+
+      {:ok, _other} ->
+        {:error, :jira_unknown_payload}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 end
