@@ -118,16 +118,16 @@ Load your credentials and start the instance for the repository you want to run:
 source .env
 
 # Frontend
-./elixir/bin/symphony elixir/workflows/frontend.md
+./elixir/bin/symphony elixir/workflows/frontend.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 
 # API
-./elixir/bin/symphony elixir/workflows/api.md
+./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 
 # AI Solver
-./elixir/bin/symphony elixir/workflows/ai.md
+./elixir/bin/symphony elixir/workflows/ai.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 
 # Infrastructure
-./elixir/bin/symphony elixir/workflows/infrastructure.md
+./elixir/bin/symphony elixir/workflows/infrastructure.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 ```
 
 To run multiple instances at the same time, open one terminal per repository.
@@ -136,10 +136,10 @@ To run multiple instances at the same time, open one terminal per repository.
 
 ```bash
 # Enable the web dashboard at http://localhost:4000
-./elixir/bin/symphony elixir/workflows/api.md --port 4000
+./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails --port 4000
 
 # Write logs to a custom directory
-./elixir/bin/symphony elixir/workflows/api.md --logs-root ~/logs/symphony-api
+./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails --logs-root ~/logs/symphony-api
 ```
 
 ---
