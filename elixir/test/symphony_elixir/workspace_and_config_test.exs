@@ -917,6 +917,73 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.codex.command == "#{codex_bin} app-server"
   end
 
+  describe "Config.Schema — nested tracker config" do
+    test "parses Linear settings nested under tracker.linear" do
+      {:ok, settings} =
+        SymphonyElixir.Config.Schema.parse(%{
+          "tracker" => %{
+            "kind" => "linear",
+            "linear" => %{
+              "endpoint" => "https://api.linear.app/graphql",
+              "api_key" => "key-123",
+              "project_slug" => "acme-web"
+            }
+          }
+        })
+
+      assert settings.tracker.kind == "linear"
+      assert settings.tracker.linear.endpoint == "https://api.linear.app/graphql"
+      assert settings.tracker.linear.api_key == "key-123"
+      assert settings.tracker.linear.project_slug == "acme-web"
+    end
+
+    test "parses Jira settings nested under tracker.jira" do
+      {:ok, settings} =
+        SymphonyElixir.Config.Schema.parse(%{
+          "tracker" => %{
+            "kind" => "jira",
+            "jira" => %{
+              "site_url" => "https://acme.atlassian.net",
+              "email" => "bot@example.com",
+              "api_token" => "tkn-abc",
+              "project_key" => "ABC"
+            }
+          }
+        })
+
+      assert settings.tracker.kind == "jira"
+      assert settings.tracker.jira.site_url == "https://acme.atlassian.net"
+      assert settings.tracker.jira.email == "bot@example.com"
+      assert settings.tracker.jira.api_token == "tkn-abc"
+      assert settings.tracker.jira.project_key == "ABC"
+    end
+
+    test "resolves Jira secrets from env vars when absent in config" do
+      original_token = System.get_env("JIRA_API_TOKEN")
+      original_email = System.get_env("JIRA_EMAIL")
+      original_assignee = System.get_env("JIRA_ASSIGNEE")
+
+      System.put_env("JIRA_API_TOKEN", "env-token")
+      System.put_env("JIRA_EMAIL", "env@example.com")
+      System.put_env("JIRA_ASSIGNEE", "env-assignee-id")
+
+      try do
+        {:ok, settings} =
+          SymphonyElixir.Config.Schema.parse(%{
+            "tracker" => %{"kind" => "jira", "jira" => %{"site_url" => "https://a.atlassian.net", "project_key" => "A"}}
+          })
+
+        assert settings.tracker.jira.api_token == "env-token"
+        assert settings.tracker.jira.email == "env@example.com"
+        assert settings.tracker.assignee == "env-assignee-id"
+      after
+        restore_env("JIRA_API_TOKEN", original_token)
+        restore_env("JIRA_EMAIL", original_email)
+        restore_env("JIRA_ASSIGNEE", original_assignee)
+      end
+    end
+  end
+
   test "config no longer resolves legacy env: references" do
     workspace_env_var = "SYMP_WORKSPACE_ROOT_#{System.unique_integer([:positive])}"
     api_key_env_var = "SYMP_LINEAR_API_KEY_#{System.unique_integer([:positive])}"

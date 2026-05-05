@@ -37,6 +37,45 @@ defmodule SymphonyElixir.Config.Schema do
     def dump(_value), do: :error
   end
 
+  defmodule TrackerLinear do
+    @moduledoc false
+    use Ecto.Schema
+    import Ecto.Changeset
+
+    @primary_key false
+    embedded_schema do
+      field(:endpoint, :string, default: "https://api.linear.app/graphql")
+      field(:api_key, :string)
+      field(:project_slug, :string)
+    end
+
+    @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
+    def changeset(schema, attrs) do
+      schema
+      |> cast(attrs, [:endpoint, :api_key, :project_slug], empty_values: [])
+    end
+  end
+
+  defmodule TrackerJira do
+    @moduledoc false
+    use Ecto.Schema
+    import Ecto.Changeset
+
+    @primary_key false
+    embedded_schema do
+      field(:site_url, :string)
+      field(:email, :string)
+      field(:api_token, :string)
+      field(:project_key, :string)
+    end
+
+    @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
+    def changeset(schema, attrs) do
+      schema
+      |> cast(attrs, [:site_url, :email, :api_token, :project_key], empty_values: [])
+    end
+  end
+
   defmodule Tracker do
     @moduledoc false
     use Ecto.Schema
@@ -46,22 +85,27 @@ defmodule SymphonyElixir.Config.Schema do
 
     embedded_schema do
       field(:kind, :string)
-      field(:endpoint, :string, default: "https://api.linear.app/graphql")
-      field(:api_key, :string)
-      field(:project_slug, :string)
       field(:assignee, :string)
       field(:active_states, {:array, :string}, default: ["Todo", "In Progress"])
       field(:terminal_states, {:array, :string}, default: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"])
+
+      embeds_one(:linear, SymphonyElixir.Config.Schema.TrackerLinear,
+        on_replace: :update,
+        defaults_to_struct: true
+      )
+
+      embeds_one(:jira, SymphonyElixir.Config.Schema.TrackerJira,
+        on_replace: :update,
+        defaults_to_struct: true
+      )
     end
 
     @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
     def changeset(schema, attrs) do
       schema
-      |> cast(
-        attrs,
-        [:kind, :endpoint, :api_key, :project_slug, :assignee, :active_states, :terminal_states],
-        empty_values: []
-      )
+      |> cast(attrs, [:kind, :assignee, :active_states, :terminal_states], empty_values: [])
+      |> cast_embed(:linear, with: &SymphonyElixir.Config.Schema.TrackerLinear.changeset/2)
+      |> cast_embed(:jira, with: &SymphonyElixir.Config.Schema.TrackerJira.changeset/2)
     end
   end
 
@@ -366,10 +410,30 @@ defmodule SymphonyElixir.Config.Schema do
   end
 
   defp finalize_settings(settings) do
+    tracker = settings.tracker
+
+    tracker_linear = %{
+      tracker.linear
+      | api_key: resolve_secret_setting(tracker.linear.api_key, System.get_env("LINEAR_API_KEY"))
+    }
+
+    tracker_jira = %{
+      tracker.jira
+      | api_token: resolve_secret_setting(tracker.jira.api_token, System.get_env("JIRA_API_TOKEN")),
+        email: resolve_secret_setting(tracker.jira.email, System.get_env("JIRA_EMAIL"))
+    }
+
+    assignee_env =
+      case tracker.kind do
+        "jira" -> System.get_env("JIRA_ASSIGNEE")
+        _ -> System.get_env("LINEAR_ASSIGNEE")
+      end
+
     tracker = %{
-      settings.tracker
-      | api_key: resolve_secret_setting(settings.tracker.api_key, System.get_env("LINEAR_API_KEY")),
-        assignee: resolve_secret_setting(settings.tracker.assignee, System.get_env("LINEAR_ASSIGNEE"))
+      tracker
+      | linear: tracker_linear,
+        jira: tracker_jira,
+        assignee: resolve_secret_setting(tracker.assignee, assignee_env)
     }
 
     workspace = %{
