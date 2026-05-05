@@ -35,12 +35,18 @@ defmodule SymphonyElixir.Workflow do
 
   @spec current() :: {:ok, loaded_workflow()} | {:error, term()}
   def current do
-    case Process.whereis(WorkflowStore) do
-      pid when is_pid(pid) ->
-        WorkflowStore.current()
+    case Application.get_env(:symphony_elixir, :workflow_config) do
+      config when is_map(config) ->
+        {:ok, %{config: config, prompt: "", prompt_template: ""}}
 
       _ ->
-        load()
+        case Process.whereis(WorkflowStore) do
+          pid when is_pid(pid) ->
+            WorkflowStore.current()
+
+          _ ->
+            load()
+        end
     end
   end
 

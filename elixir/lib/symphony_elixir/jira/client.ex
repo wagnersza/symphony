@@ -98,7 +98,61 @@ defmodule SymphonyElixir.Jira.Client do
   defp render_inline(%{"type" => "hardBreak"}), do: "\n"
   defp render_inline(_other), do: ""
 
+  require Logger
+  alias SymphonyElixir.{Config, HttpErrorLog}
   alias SymphonyElixir.Tracker.Issue
+
+  @spec request(atom(), String.t(), term(), keyword()) :: {:ok, term()} | {:error, term()}
+  def request(method, path, body \\ nil, opts \\ []) when is_atom(method) and is_binary(path) do
+    jira = Config.settings!().tracker.jira
+    request_fun = Keyword.get(opts, :request_fun, &default_request/4)
+
+    with {:ok, headers} <- headers(jira),
+         url = jira.site_url <> "/rest/api/3" <> path,
+         {:ok, %{status: status, body: response_body}} when status in 200..299 <-
+           request_fun.(method, url, headers, body) do
+      {:ok, response_body}
+    else
+      {:ok, %{status: status, body: response_body}} ->
+        Logger.error(
+          "Jira API request failed status=#{status} path=#{path} body=" <>
+            HttpErrorLog.summarize_body(response_body)
+        )
+
+        {:error, {:jira_api_status, status}}
+
+      {:error, :missing_jira_credentials} = error ->
+        error
+
+      {:error, reason} ->
+        Logger.error("Jira API request failed: #{inspect(reason)}")
+        {:error, {:jira_api_request, reason}}
+    end
+  end
+
+  defp headers(%{site_url: url, email: email, api_token: token})
+       when is_binary(url) and is_binary(email) and is_binary(token) do
+    encoded = Base.encode64(email <> ":" <> token)
+
+    {:ok,
+     [
+       {"Authorization", "Basic " <> encoded},
+       {"Accept", "application/json"},
+       {"Content-Type", "application/json"}
+     ]}
+  end
+
+  defp headers(_), do: {:error, :missing_jira_credentials}
+
+  defp default_request(method, url, headers, body) do
+    Req.request(
+      method: method,
+      url: url,
+      headers: headers,
+      json: body,
+      connect_options: [timeout: 30_000]
+    )
+  end
 
   @priority_map %{
     "Highest" => 1,

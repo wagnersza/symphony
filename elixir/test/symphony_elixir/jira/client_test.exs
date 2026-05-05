@@ -170,4 +170,62 @@ defmodule SymphonyElixir.Jira.ClientTest do
       assert result.priority == nil
     end
   end
+
+  describe "request/4" do
+    setup do
+      original_env = Application.get_env(:symphony_elixir, :workflow_config)
+      on_exit(fn -> Application.put_env(:symphony_elixir, :workflow_config, original_env) end)
+
+      Application.put_env(:symphony_elixir, :workflow_config, %{
+        "tracker" => %{
+          "kind" => "jira",
+          "jira" => %{
+            "site_url" => "https://acme.atlassian.net",
+            "email" => "bot@example.com",
+            "api_token" => "tkn",
+            "project_key" => "ABC"
+          }
+        }
+      })
+
+      :ok
+    end
+
+    test "sends Basic-auth header, JSON body, and returns parsed body on 2xx" do
+      request_fun = fn method, url, headers, body ->
+        assert method == :post
+        assert url == "https://acme.atlassian.net/rest/api/3/foo"
+        assert {"Authorization", "Basic " <> encoded} = List.keyfind(headers, "Authorization", 0)
+        assert Base.decode64!(encoded) == "bot@example.com:tkn"
+        assert body == %{"hello" => "world"}
+        {:ok, %{status: 200, body: %{"ok" => true}}}
+      end
+
+      assert Client.request(:post, "/foo", %{"hello" => "world"}, request_fun: request_fun) ==
+               {:ok, %{"ok" => true}}
+    end
+
+    test "returns missing-credentials error when any credential is nil" do
+      Application.put_env(:symphony_elixir, :workflow_config, %{
+        "tracker" => %{"kind" => "jira", "jira" => %{"site_url" => "https://a.atlassian.net", "email" => "e@x", "project_key" => "A"}}
+      })
+
+      assert Client.request(:get, "/foo", nil, request_fun: fn _, _, _, _ -> flunk("should not call") end) ==
+               {:error, :missing_jira_credentials}
+    end
+
+    test "returns {:jira_api_status, status} on non-2xx" do
+      request_fun = fn _, _, _, _ -> {:ok, %{status: 404, body: "not found"}} end
+
+      assert Client.request(:get, "/foo", nil, request_fun: request_fun) ==
+               {:error, {:jira_api_status, 404}}
+    end
+
+    test "returns {:jira_api_request, reason} on transport error" do
+      request_fun = fn _, _, _, _ -> {:error, :nxdomain} end
+
+      assert Client.request(:get, "/foo", nil, request_fun: request_fun) ==
+               {:error, {:jira_api_request, :nxdomain}}
+    end
+  end
 end
