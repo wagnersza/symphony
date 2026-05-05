@@ -99,7 +99,9 @@ defmodule SymphonyElixir.CoreTest do
     tracker = Map.get(config, "tracker", %{})
     assert is_map(tracker)
     assert Map.get(tracker, "kind") == "linear"
-    assert is_binary(Map.get(tracker, "project_slug"))
+    linear = Map.get(tracker, "linear", %{})
+    assert is_map(linear)
+    assert is_binary(Map.get(linear, "project_slug"))
     assert is_list(Map.get(tracker, "active_states"))
     assert is_list(Map.get(tracker, "terminal_states"))
 
@@ -128,8 +130,8 @@ defmodule SymphonyElixir.CoreTest do
       codex_command: "/bin/sh app-server"
     )
 
-    assert Config.settings!().tracker.api_key == env_api_key
-    assert Config.settings!().tracker.project_slug == "project"
+    assert Config.settings!().tracker.linear.api_key == env_api_key
+    assert Config.settings!().tracker.linear.project_slug == "project"
     assert :ok = Config.validate!()
   end
 

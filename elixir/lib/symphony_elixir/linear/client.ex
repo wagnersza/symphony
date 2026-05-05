@@ -106,10 +106,11 @@ defmodule SymphonyElixir.Linear.Client do
   @spec fetch_candidate_issues() :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_candidate_issues do
     tracker = Config.settings!().tracker
-    project_slug = tracker.project_slug
+    linear = tracker.linear
+    project_slug = linear.project_slug
 
     cond do
-      is_nil(tracker.api_key) ->
+      is_nil(linear.api_key) ->
         {:error, :missing_linear_api_token}
 
       is_nil(project_slug) ->
@@ -130,10 +131,11 @@ defmodule SymphonyElixir.Linear.Client do
       {:ok, []}
     else
       tracker = Config.settings!().tracker
-      project_slug = tracker.project_slug
+      linear = tracker.linear
+      project_slug = linear.project_slug
 
       cond do
-        is_nil(tracker.api_key) ->
+        is_nil(linear.api_key) ->
           {:error, :missing_linear_api_token}
 
         is_nil(project_slug) ->
@@ -392,7 +394,7 @@ defmodule SymphonyElixir.Linear.Client do
   end
 
   defp graphql_headers do
-    case Config.settings!().tracker.api_key do
+    case Config.settings!().tracker.linear.api_key do
       nil ->
         {:error, :missing_linear_api_token}
 
@@ -406,7 +408,7 @@ defmodule SymphonyElixir.Linear.Client do
   end
 
   defp post_graphql_request(payload, headers) do
-    Req.post(Config.settings!().tracker.endpoint,
+    Req.post(Config.settings!().tracker.linear.endpoint,
       headers: headers,
       json: payload,
       connect_options: [timeout: 30_000]
