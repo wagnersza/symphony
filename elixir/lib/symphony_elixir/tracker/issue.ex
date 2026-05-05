@@ -31,6 +31,7 @@ defmodule SymphonyElixir.Tracker.Issue do
           branch_name: String.t() | nil,
           url: String.t() | nil,
           assignee_id: String.t() | nil,
+          blocked_by: [%{id: String.t(), identifier: String.t(), state: String.t()}],
           labels: [String.t()],
           assigned_to_worker: boolean(),
           created_at: DateTime.t() | nil,
