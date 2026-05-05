@@ -7,7 +7,7 @@ Symphony polls Jira for tickets and runs autonomous coding agents against your r
 1. Symphony polls Jira for tickets in the configured active states.
 2. For each eligible ticket, it creates an isolated workspace directory.
 3. It clones the target repository into that workspace (`hooks.after_create`).
-4. It launches a Codex agent inside the workspace with the ticket context as the prompt.
+4. It launches a Claude agent inside the workspace with the ticket context as the prompt.
 5. The agent works until the ticket reaches a terminal state or the turn limit is reached.
 6. When a ticket moves to a terminal state, Symphony stops the agent and cleans up.
 
@@ -40,13 +40,13 @@ mise trust
 mise install
 ```
 
-### 2. Codex CLI
+### 2. Claude CLI
 
-Install and authenticate [Codex](https://github.com/openai/codex):
+Install and authenticate [Claude Code](https://claude.ai/code):
 
 ```bash
-npm install -g @openai/codex
-codex login
+npm install -g @anthropic-ai/claude-code
+claude login
 ```
 
 ### 3. GitHub CLI
@@ -180,7 +180,7 @@ Workspaces persist across runs. A workspace for a ticket is reused on retry so t
 
 Each workflow file (`elixir/workflows/*.md`) has two parts:
 
-- **YAML front matter** — tracker config, polling interval, workspace root, hooks, agent limits, and Codex settings.
+- **YAML front matter** — tracker config, polling interval, workspace root, hooks, agent limits, and Claude settings.
 - **Markdown body** — the prompt template sent to the agent, with access to `{{ issue.identifier }}`, `{{ issue.title }}`, `{{ issue.state }}`, `{{ issue.description }}`, and `{{ issue.labels }}`.
 
 To customize behavior for a repository, edit its workflow file. Changes are picked up on the next polling cycle without restarting Symphony.

@@ -25,7 +25,7 @@ agent:
   #   "To Do": 2
   #   "In Progress": 3
 codex:
-  command: codex app-server
+  command: claude --dangerously-skip-permissions
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:
