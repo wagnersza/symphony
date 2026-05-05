@@ -247,7 +247,7 @@ defmodule SymphonyElixir.Jira.Client do
       {:error, :missing_jira_project_key}
     else
       jql = build_jql(jira.project_key, tracker.active_states, tracker.assignee)
-      do_search(jql, jira.site_url, 0, [], opts)
+      do_search(jql, jira.site_url, nil, [], opts)
     end
   end
 
@@ -265,7 +265,7 @@ defmodule SymphonyElixir.Jira.Client do
         {:error, :missing_jira_project_key}
       else
         jql = build_jql(jira.project_key, normalized, nil)
-        do_search(jql, jira.site_url, 0, [], opts)
+        do_search(jql, jira.site_url, nil, [], opts)
       end
     end
   end
@@ -282,35 +282,29 @@ defmodule SymphonyElixir.Jira.Client do
         jira = Config.settings!().tracker.jira
         keys_clause = ids |> Enum.map(&~s|"#{&1}"|) |> Enum.join(",")
         jql = "key in (" <> keys_clause <> ") ORDER BY created ASC"
-        do_search(jql, jira.site_url, 0, [], opts)
+        do_search(jql, jira.site_url, nil, [], opts)
     end
   end
 
-  defp do_search(jql, site_url, start_at, acc, opts) do
-    body = %{
-      "jql" => jql,
-      "startAt" => start_at,
-      "maxResults" => @issue_page_size,
-      "fields" => @search_fields
-    }
+  defp do_search(jql, site_url, page_token, acc, opts) do
+    fields = Enum.join(@search_fields, ",")
 
-    case request(:post, "/search", body, opts) do
-      {:ok,
-       %{
-         "issues" => issues,
-         "startAt" => returned_start,
-         "maxResults" => max_results,
-         "total" => total
-       }}
-      when is_list(issues) ->
+    path =
+      "/search/jql?jql=#{URI.encode(jql)}&maxResults=#{@issue_page_size}&fields=#{fields}" <>
+        if(page_token, do: "&nextPageToken=#{URI.encode(page_token)}", else: "")
+
+    case request(:get, path, nil, opts) do
+      {:ok, %{"issues" => issues} = response} when is_list(issues) ->
         normalized = Enum.map(issues, &normalize_issue(&1, site_url))
         new_acc = acc ++ normalized
-        next_start = returned_start + max_results
 
-        if next_start >= total or issues == [] do
+        if response["isLast"] != false and issues != [] do
           {:ok, new_acc}
         else
-          do_search(jql, site_url, next_start, new_acc, opts)
+          case response["nextPageToken"] do
+            nil -> {:ok, new_acc}
+            token -> do_search(jql, site_url, token, new_acc, opts)
+          end
         end
 
       {:ok, _other} ->

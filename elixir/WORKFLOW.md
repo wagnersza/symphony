@@ -1,19 +1,19 @@
 ---
 tracker:
-  kind: linear
-  linear:
-    project_slug: "symphony-0c79b11b75ea"
+  kind: jira
+  jira:
+    site_url: "https://your-org.atlassian.net"
+    email: "your-email@example.com"
+    api_token: "$JIRA_API_TOKEN"
+    project_key: "KAN"
   active_states:
-    - Todo
+    - To Do
     - In Progress
-    - Merging
-    - Rework
+    - Doing
+    - UNDER REVIEW
   terminal_states:
-    - Closed
-    - Cancelled
-    - Canceled
-    - Duplicate
     - Done
+    - Backlog
 polling:
   interval_ms: 5000
 workspace:
