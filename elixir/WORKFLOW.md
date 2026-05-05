@@ -2,10 +2,10 @@
 tracker:
   kind: jira
   jira:
-    site_url: "https://your-org.atlassian.net"
-    email: "your-email@example.com"
+    site_url: "$JIRA_SITE_URL"
+    email: "$JIRA_EMAIL"
     api_token: "$JIRA_API_TOKEN"
-    project_key: "KAN"
+    project_key: "$JIRA_PROJECT_KEY"
   active_states:
     - To Do
     - In Progress
