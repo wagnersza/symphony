@@ -97,4 +97,87 @@ defmodule SymphonyElixir.Jira.Client do
   defp render_inline(%{"type" => "text", "text" => text}) when is_binary(text), do: text
   defp render_inline(%{"type" => "hardBreak"}), do: "\n"
   defp render_inline(_other), do: ""
+
+  alias SymphonyElixir.Tracker.Issue
+
+  @priority_map %{
+    "Highest" => 1,
+    "High" => 2,
+    "Medium" => 3,
+    "Low" => 4,
+    "Lowest" => 5
+  }
+
+  @spec normalize_issue(map(), String.t()) :: Issue.t()
+  def normalize_issue(%{"key" => key, "fields" => fields}, site_url)
+      when is_binary(key) and is_map(fields) and is_binary(site_url) do
+    %Issue{
+      id: key,
+      identifier: key,
+      title: fields["summary"],
+      description: adf_to_text(fields["description"]),
+      priority: map_priority(fields["priority"]),
+      state: get_in(fields, ["status", "name"]),
+      branch_name: derive_branch_name(key, fields["summary"]),
+      url: site_url <> "/browse/" <> key,
+      assignee_id: get_in(fields, ["assignee", "accountId"]),
+      blocked_by: extract_blockers(fields["issuelinks"]),
+      labels: extract_labels(fields["labels"]),
+      assigned_to_worker: true,
+      created_at: parse_datetime(fields["created"]),
+      updated_at: parse_datetime(fields["updated"])
+    }
+  end
+
+  defp map_priority(%{"name" => name}) when is_binary(name), do: Map.get(@priority_map, name)
+  defp map_priority(_), do: nil
+
+  defp derive_branch_name(key, summary) when is_binary(key) do
+    slug_source = key <> "-" <> to_string(summary || "")
+
+    slug =
+      slug_source
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "-")
+      |> String.trim("-")
+
+    "jira/" <> slug
+  end
+
+  defp extract_blockers(links) when is_list(links) do
+    Enum.flat_map(links, fn
+      %{
+        "type" => %{"inward" => "is blocked by"},
+        "inwardIssue" => %{
+          "key" => k,
+          "fields" => %{"status" => %{"name" => state}}
+        }
+      } ->
+        [%{id: k, identifier: k, state: state}]
+
+      _ ->
+        []
+    end)
+  end
+
+  defp extract_blockers(_), do: []
+
+  defp extract_labels(labels) when is_list(labels) do
+    labels
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.downcase/1)
+  end
+
+  defp extract_labels(_), do: []
+
+  defp parse_datetime(nil), do: nil
+
+  defp parse_datetime(raw) when is_binary(raw) do
+    normalized = Regex.replace(~r/([+-]\d{2})(\d{2})$/, raw, "\\1:\\2")
+
+    case DateTime.from_iso8601(normalized) do
+      {:ok, dt, _offset} -> dt
+      _ -> nil
+    end
+  end
 end
