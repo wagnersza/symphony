@@ -32,7 +32,7 @@ agent:
   max_concurrent_agents: 3
   max_turns: 20
 codex:
-  command: claude --dangerously-skip-permissions
+  command: claude -p --dangerously-skip-permissions
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:
