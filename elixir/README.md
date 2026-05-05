@@ -89,7 +89,8 @@ Minimal example:
 ---
 tracker:
   kind: linear
-  project_slug: "..."
+  linear:
+    project_slug: "..."
 workspace:
   root: ~/code/workspaces
 hooks:
@@ -107,7 +108,52 @@ You are working on a Linear issue {{ issue.identifier }}.
 Title: {{ issue.title }} Body: {{ issue.description }}
 ```
 
-Notes:
+### Tracker configuration
+
+Symphony supports Linear and Jira Cloud as issue trackers, plus an in-memory
+adapter for tests. Shared fields live on `tracker`; tracker-specific fields
+live under `tracker.linear` or `tracker.jira`.
+
+#### Linear
+
+```yaml
+tracker:
+  kind: linear
+  assignee: me
+  active_states: [Todo, In Progress]
+  linear:
+    project_slug: acme-web
+    endpoint: https://api.linear.app/graphql
+    # api_key falls back to the LINEAR_API_KEY env var if omitted
+```
+
+Env vars: `LINEAR_API_KEY`, `LINEAR_ASSIGNEE`.
+
+#### Jira Cloud
+
+```yaml
+tracker:
+  kind: jira
+  assignee: me                 # or a Jira accountId (usernames are deprecated)
+  active_states: [To Do, In Progress]
+  jira:
+    site_url: https://acme.atlassian.net
+    project_key: ABC
+    # email and api_token fall back to JIRA_EMAIL / JIRA_API_TOKEN env vars
+```
+
+Env vars: `JIRA_API_TOKEN`, `JIRA_EMAIL`, `JIRA_ASSIGNEE`.
+
+Notes on the Jira adapter:
+
+- `branch_name` is derived as `jira/<key>-<slug(summary)>` — Jira has no
+  native branch-name field.
+- Descriptions and comments are transported as ADF (Atlassian Document
+  Format), serialized to/from plain text.
+- State transitions are resolved dynamically by querying the available
+  transitions for an issue, so operators never supply transition IDs.
+
+### Other configuration notes
 
 - If a value is missing, defaults are used.
 - Safer Codex defaults are used when policy fields are omitted:
@@ -127,15 +173,12 @@ Notes:
   `git clone ... .` there, along with any other setup commands you need.
 - If a hook needs `mise exec` inside a freshly cloned workspace, trust the repo config and fetch
   the project dependencies in `hooks.after_create` before invoking `mise` later from other hooks.
-- `tracker.api_key` reads from `LINEAR_API_KEY` when unset or when value is `$LINEAR_API_KEY`.
 - For path values, `~` is expanded to the home directory.
 - For env-backed path values, use `$VAR`. `workspace.root` resolves `$VAR` before path handling,
   while `codex.command` stays a shell command string and any `$VAR` expansion there happens in the
   launched shell.
 
 ```yaml
-tracker:
-  api_key: $LINEAR_API_KEY
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
 hooks:
