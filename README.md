@@ -1,41 +1,192 @@
-# Symphony
+# Symphony — Harumi Setup
 
-Symphony turns project work into isolated, autonomous implementation runs, allowing teams to manage
-work instead of supervising coding agents.
+Symphony polls Jira for tickets and runs autonomous coding agents against your repositories. Each agent gets an isolated workspace, clones the target repo, and works the ticket end-to-end.
 
-[![Symphony demo video preview](.github/media/symphony-demo-poster.jpg)](.github/media/symphony-demo.mp4)
+## How it works
 
-_In this [demo video](.github/media/symphony-demo.mp4), Symphony monitors a Linear board for work and spawns agents to handle the tasks. The agents complete the tasks and provide proof of work: CI status, PR review feedback, complexity analysis, and walkthrough videos. When accepted, the agents land the PR safely. Engineers do not need to supervise Codex; they can manage the work at a higher level._
+1. Symphony polls Jira for tickets in the configured active states.
+2. For each eligible ticket, it creates an isolated workspace directory.
+3. It clones the target repository into that workspace (`hooks.after_create`).
+4. It launches a Codex agent inside the workspace with the ticket context as the prompt.
+5. The agent works until the ticket reaches a terminal state or the turn limit is reached.
+6. When a ticket moves to a terminal state, Symphony stops the agent and cleans up.
 
-> [!WARNING]
-> Symphony is a low-key engineering preview for testing in trusted environments.
+There is one Symphony instance per repository. Harumi runs four:
 
-## Running Symphony
+| Instance | Repository | Workflow file |
+|----------|-----------|---------------|
+| Frontend | `harumi-io/frontend` | `elixir/workflows/frontend.md` |
+| API | `harumi-io/harumi-api` | `elixir/workflows/api.md` |
+| AI Solver | `harumi-io/ai-solver` | `elixir/workflows/ai.md` |
+| Infrastructure | `harumi-io/infrastructure` | `elixir/workflows/infrastructure.md` |
 
-### Requirements
+---
 
-Symphony works best in codebases that have adopted
-[harness engineering](https://openai.com/index/harness-engineering/). Symphony is the next step --
-moving from managing coding agents to managing work that needs to get done.
+## Prerequisites
 
-### Option 1. Make your own
+### 1. Elixir runtime
 
-Tell your favorite coding agent to build Symphony in a programming language of your choice:
+Install [mise](https://mise.jdx.dev/) to manage the Elixir/Erlang versions:
 
-> Implement Symphony according to the following spec:
-> https://github.com/openai/symphony/blob/main/SPEC.md
+```bash
+brew install mise
+```
 
-### Option 2. Use our experimental reference implementation
+Then inside this repo:
 
-Check out [elixir/README.md](elixir/README.md) for instructions on how to set up your environment
-and run the Elixir-based Symphony implementation. You can also ask your favorite coding agent to
-help with the setup:
+```bash
+cd elixir
+mise trust
+mise install
+```
 
-> Set up Symphony for my repository based on
-> https://github.com/openai/symphony/blob/main/elixir/README.md
+### 2. Codex CLI
+
+Install and authenticate [Codex](https://github.com/openai/codex):
+
+```bash
+npm install -g @openai/codex
+codex login
+```
+
+### 3. GitHub CLI
+
+Required for the agent to open PRs and interact with GitHub:
+
+```bash
+brew install gh
+gh auth login
+```
+
+---
+
+## Configuration
+
+### Jira credentials
+
+Copy `.env.example` to `.env` at the root of this repo and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+```env
+JIRA_API_TOKEN=your-jira-api-token
+JIRA_EMAIL=you@harumi.io
+JIRA_SITE_URL=https://your-org.atlassian.net
+JIRA_PROJECT_KEY=KAN
+```
+
+**How to get a Jira API token:**
+
+1. Go to [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+2. Click **Create API token**
+3. Give it a name (e.g. `symphony`) and copy the token
+
+> The `.env` file is gitignored and never committed.
+
+### Optional: limit to your own tickets
+
+To make a Symphony instance only pick up tickets assigned to you, add `assignee` to the workflow file's front matter:
+
+```yaml
+tracker:
+  assignee: "you@harumi.io"   # or your Jira accountId
+```
+
+---
+
+## Build
+
+Build the Symphony binary once (or after pulling changes):
+
+```bash
+cd elixir
+mise exec -- mix setup
+mise exec -- mix build
+```
+
+This produces `elixir/bin/symphony`.
+
+---
+
+## Running
+
+Load your credentials and start the instance for the repository you want to run:
+
+```bash
+source .env
+
+# Frontend
+./elixir/bin/symphony elixir/workflows/frontend.md
+
+# API
+./elixir/bin/symphony elixir/workflows/api.md
+
+# AI Solver
+./elixir/bin/symphony elixir/workflows/ai.md
+
+# Infrastructure
+./elixir/bin/symphony elixir/workflows/infrastructure.md
+```
+
+To run multiple instances at the same time, open one terminal per repository.
+
+### Optional flags
+
+```bash
+# Enable the web dashboard at http://localhost:4000
+./elixir/bin/symphony elixir/workflows/api.md --port 4000
+
+# Write logs to a custom directory
+./elixir/bin/symphony elixir/workflows/api.md --logs-root ~/logs/symphony-api
+```
+
+---
+
+## Jira board setup
+
+Symphony expects the following statuses on the KAN board. Tickets in `active_states` are eligible for dispatch; tickets in `terminal_states` are ignored.
+
+| Status | Role |
+|--------|------|
+| `To Do` | Queued — agent will pick up and move to `In Progress` |
+| `In Progress` | Agent is actively working |
+| `Doing` | Also treated as active (same as In Progress) |
+| `UNDER REVIEW` | PR submitted — waiting for human review |
+| `Done` | Terminal — agent will not touch |
+| `Backlog` | Terminal — agent will not touch |
+
+To route a ticket to a specific repository, use a Jira label matching the instance name (`frontend`, `api`, `ai`, `infrastructure`) and start only the corresponding Symphony instance. Without a label filter, any running instance will pick up any eligible ticket.
+
+---
+
+## Workspaces
+
+Each instance stores its workspaces in a separate directory under `~/code/symphony-workspaces/`:
+
+| Instance | Workspace root |
+|----------|---------------|
+| Frontend | `~/code/symphony-workspaces/frontend` |
+| API | `~/code/symphony-workspaces/api` |
+| AI Solver | `~/code/symphony-workspaces/ai` |
+| Infrastructure | `~/code/symphony-workspaces/infrastructure` |
+
+Workspaces persist across runs. A workspace for a ticket is reused on retry so the agent can continue from where it left off.
+
+---
+
+## Workflow files
+
+Each workflow file (`elixir/workflows/*.md`) has two parts:
+
+- **YAML front matter** — tracker config, polling interval, workspace root, hooks, agent limits, and Codex settings.
+- **Markdown body** — the prompt template sent to the agent, with access to `{{ issue.identifier }}`, `{{ issue.title }}`, `{{ issue.state }}`, `{{ issue.description }}`, and `{{ issue.labels }}`.
+
+To customize behavior for a repository, edit its workflow file. Changes are picked up on the next polling cycle without restarting Symphony.
 
 ---
 
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE)
