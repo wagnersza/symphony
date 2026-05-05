@@ -36,4 +36,63 @@ defmodule SymphonyElixir.Jira.ClientTest do
       end
     end
   end
+
+  describe "adf_to_text/1" do
+    test "returns empty string for nil" do
+      assert Client.adf_to_text(nil) == ""
+    end
+
+    test "extracts a single paragraph of text" do
+      adf = %{
+        "type" => "doc",
+        "version" => 1,
+        "content" => [
+          %{"type" => "paragraph", "content" => [%{"type" => "text", "text" => "hello world"}]}
+        ]
+      }
+
+      assert Client.adf_to_text(adf) == "hello world"
+    end
+
+    test "joins paragraphs with newlines and handles hard breaks" do
+      adf = %{
+        "type" => "doc",
+        "content" => [
+          %{"type" => "paragraph", "content" => [%{"type" => "text", "text" => "line1"}, %{"type" => "hardBreak"}, %{"type" => "text", "text" => "line2"}]},
+          %{"type" => "paragraph", "content" => [%{"type" => "text", "text" => "para2"}]}
+        ]
+      }
+
+      assert Client.adf_to_text(adf) == "line1\nline2\n\npara2"
+    end
+
+    test "renders bullet list items with a leading dash" do
+      adf = %{
+        "type" => "doc",
+        "content" => [
+          %{
+            "type" => "bulletList",
+            "content" => [
+              %{"type" => "listItem", "content" => [%{"type" => "paragraph", "content" => [%{"type" => "text", "text" => "one"}]}]},
+              %{"type" => "listItem", "content" => [%{"type" => "paragraph", "content" => [%{"type" => "text", "text" => "two"}]}]}
+            ]
+          }
+        ]
+      }
+
+      assert Client.adf_to_text(adf) == "- one\n- two"
+    end
+  end
+
+  describe "adf_from_text/1" do
+    test "wraps a string as a single-paragraph ADF doc" do
+      assert Client.adf_from_text("hi") == %{
+               "type" => "doc",
+               "version" => 1,
+               "content" => [
+                 %{"type" => "paragraph", "content" => [%{"type" => "text", "text" => "hi"}]}
+               ]
+             }
+    end
+  end
 end
