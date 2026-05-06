@@ -20,7 +20,7 @@ workspace:
   root: ~/code/symphony-workspaces/frontend
 hooks:
   after_create: |
-    git clone --depth 1 https://github.com/harumi-io/frontend .
+    git clone --depth 1 https://github.com/your-org/your-frontend-repo .
     if command -v mise >/dev/null 2>&1; then
       mise trust && mise exec -- npm install
     else
@@ -39,7 +39,7 @@ codex:
     type: workspaceWrite
 ---
 
-You are working on a Jira ticket `{{ issue.identifier }}` in the **Frontend** repository (`harumi-io/frontend`).
+You are working on a Jira ticket `{{ issue.identifier }}` in the **Frontend** repository (`your-org/your-frontend-repo`).
 
 This is a React/TypeScript frontend codebase.
 

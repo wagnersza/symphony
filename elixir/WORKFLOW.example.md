@@ -17,7 +17,7 @@ tracker:
 polling:
   interval_ms: 30000
 workspace:
-  root: ~/code/symphony-workspaces
+  root: ~/code/symphony-workspaces/myproject
 agent:
   max_concurrent_agents: 5
   max_turns: 20

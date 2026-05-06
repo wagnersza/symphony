@@ -1,4 +1,4 @@
-# Symphony — Harumi Setup
+# Symphony
 
 Symphony polls Jira for tickets and runs autonomous coding agents against your repositories. Each agent gets an isolated workspace, clones the target repo, and works the ticket end-to-end.
 
@@ -11,14 +11,12 @@ Symphony polls Jira for tickets and runs autonomous coding agents against your r
 5. The agent works until the ticket reaches a terminal state or the turn limit is reached.
 6. When a ticket moves to a terminal state, Symphony stops the agent and cleans up.
 
-There is one Symphony instance per repository. Harumi runs four:
+There is one Symphony instance per repository. For example, a two-repo setup might look like:
 
 | Instance | Repository | Workflow file |
 |----------|-----------|---------------|
-| Frontend | `harumi-io/frontend` | `elixir/workflows/frontend.md` |
-| API | `harumi-io/harumi-api` | `elixir/workflows/api.md` |
-| AI Solver | `harumi-io/ai-solver` | `elixir/workflows/ai.md` |
-| Infrastructure | `harumi-io/infrastructure` | `elixir/workflows/infrastructure.md` |
+| API | `your-org/your-api-repo` | `elixir/workflows/api.md` |
+| Frontend | `your-org/your-frontend-repo` | `elixir/workflows/frontend.md` |
 
 ---
 
@@ -72,9 +70,9 @@ cp .env.example .env
 
 ```env
 JIRA_API_TOKEN=your-jira-api-token
-JIRA_EMAIL=you@harumi.io
+JIRA_EMAIL=you@your-company.com
 JIRA_SITE_URL=https://your-org.atlassian.net
-JIRA_PROJECT_KEY=KAN
+JIRA_PROJECT_KEY=YOUR_PROJECT_KEY
 ```
 
 **How to get a Jira API token:**
@@ -91,7 +89,7 @@ To make a Symphony instance only pick up tickets assigned to you, add `assignee`
 
 ```yaml
 tracker:
-  assignee: "you@harumi.io"   # or your Jira accountId
+  assignee: "you@your-company.com"   # or your Jira accountId
 ```
 
 ---
@@ -117,17 +115,11 @@ Load your credentials and start the instance for the repository you want to run:
 ```bash
 source .env
 
-# Frontend
-./elixir/bin/symphony elixir/workflows/frontend.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
-
 # API
 ./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 
-# AI Solver
-./elixir/bin/symphony elixir/workflows/ai.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
-
-# Infrastructure
-./elixir/bin/symphony elixir/workflows/infrastructure.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
+# Frontend
+./elixir/bin/symphony elixir/workflows/frontend.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 ```
 
 To run multiple instances at the same time, open one terminal per repository.
@@ -146,7 +138,7 @@ To run multiple instances at the same time, open one terminal per repository.
 
 ## Jira board setup
 
-Symphony expects the following statuses on the KAN board. Tickets in `active_states` are eligible for dispatch; tickets in `terminal_states` are ignored.
+Symphony expects the following statuses on your board. Tickets in `active_states` are eligible for dispatch; tickets in `terminal_states` are ignored.
 
 | Status | Role |
 |--------|------|
@@ -157,20 +149,18 @@ Symphony expects the following statuses on the KAN board. Tickets in `active_sta
 | `Done` | Terminal — agent will not touch |
 | `Backlog` | Terminal — agent will not touch |
 
-To route a ticket to a specific repository, use a Jira label matching the instance name (`frontend`, `api`, `ai`, `infrastructure`) and start only the corresponding Symphony instance. Without a label filter, any running instance will pick up any eligible ticket.
+To route a ticket to a specific repository, use a Jira label matching the instance name (e.g. `api`, `frontend`) and start only the corresponding Symphony instance. Without a label filter, any running instance will pick up any eligible ticket.
 
 ---
 
 ## Workspaces
 
-Each instance stores its workspaces in a separate directory under `~/code/symphony-workspaces/`:
+Each instance stores its workspaces in a separate directory:
 
 | Instance | Workspace root |
 |----------|---------------|
-| Frontend | `~/code/symphony-workspaces/frontend` |
 | API | `~/code/symphony-workspaces/api` |
-| AI Solver | `~/code/symphony-workspaces/ai` |
-| Infrastructure | `~/code/symphony-workspaces/infrastructure` |
+| Frontend | `~/code/symphony-workspaces/frontend` |
 
 Workspaces persist across runs. A workspace for a ticket is reused on retry so the agent can continue from where it left off.
 
@@ -184,6 +174,8 @@ Each workflow file (`elixir/workflows/*.md`) has two parts:
 - **Markdown body** — the prompt template sent to the agent, with access to `{{ issue.identifier }}`, `{{ issue.title }}`, `{{ issue.state }}`, `{{ issue.description }}`, and `{{ issue.labels }}`.
 
 To customize behavior for a repository, edit its workflow file. Changes are picked up on the next polling cycle without restarting Symphony.
+
+See `elixir/WORKFLOW.example.md` for a minimal example, and the files under `elixir/workflows/` for fuller examples with hooks and agent posture instructions.
 
 ---
 

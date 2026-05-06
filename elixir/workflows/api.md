@@ -20,7 +20,7 @@ workspace:
   root: ~/code/symphony-workspaces/api
 hooks:
   after_create: |
-    git clone --depth 1 https://github.com/harumi-io/harumi-api .
+    git clone --depth 1 https://github.com/your-org/your-api-repo .
     if command -v mise >/dev/null 2>&1; then
       mise trust && mise exec -- mix deps.get
     else
@@ -39,7 +39,7 @@ codex:
     type: workspaceWrite
 ---
 
-You are working on a Jira ticket `{{ issue.identifier }}` in the **API** repository (`harumi-io/harumi-api`).
+You are working on a Jira ticket `{{ issue.identifier }}` in the **API** repository (`your-org/your-api-repo`).
 
 This is an Elixir/Phoenix backend API codebase.
 
