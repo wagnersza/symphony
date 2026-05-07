@@ -58,6 +58,24 @@ defmodule SymphonyElixir.Claude.AppServer do
 
   def stop_session(_), do: :ok
 
+  @spec run_turn(session(), String.t(), map(), keyword()) ::
+          {:ok, %{session_id: String.t() | nil}} | {:error, term()}
+  def run_turn(%{port: port} = session, prompt, _issue, opts) when is_binary(prompt) do
+    on_message = Keyword.get(opts, :on_message, fn _ -> :ok end)
+
+    cmd = %{type: "start", prompt: prompt, max_turns: 1}
+
+    cmd =
+      case session.session_id do
+        nil -> cmd
+        sid -> Map.put(cmd, :session_id, sid)
+      end
+
+    send_command(port, cmd)
+
+    read_until_turn_end(port, session.buffer, on_message)
+  end
+
   # --- private helpers ---
 
   defp resolve_launch(_workspace, opts) do
@@ -154,4 +172,75 @@ defmodule SymphonyElixir.Claude.AppServer do
   rescue
     _ -> :ok
   end
+
+  defp read_until_turn_end(port, buffer, on_message) do
+    receive do
+      {^port, {:data, {:eol, line}}} ->
+        handle_line(port, buffer <> line, on_message)
+
+      {^port, {:data, {:noeol, chunk}}} ->
+        read_until_turn_end(port, buffer <> chunk, on_message)
+
+      {^port, {:exit_status, code}} ->
+        {:error, {:wrapper_exited, code}}
+    after
+      300_000 ->
+        {:error, :turn_timeout}
+    end
+  end
+
+  defp handle_line(port, line, on_message) do
+    case Jason.decode(line) do
+      {:ok, %{"event" => event} = ev} when is_binary(event) ->
+        message = normalize_event(ev)
+        on_message.(message)
+
+        case event do
+          "turn_end" ->
+            {:ok, %{session_id: Map.get(ev, "session_id")}}
+
+          "session_end" ->
+            {:error, {:session_ended, Map.get(ev, "reason", "unknown"), Map.get(ev, "detail")}}
+
+          _ ->
+            read_until_turn_end(port, "", on_message)
+        end
+
+      {:ok, _} ->
+        read_until_turn_end(port, "", on_message)
+
+      {:error, _} ->
+        Logger.warning("Claude wrapper emitted unparseable line: #{inspect(line)}")
+        read_until_turn_end(port, "", on_message)
+    end
+  end
+
+  defp normalize_event(%{"event" => event} = raw) do
+    base = %{event: event, timestamp: parse_timestamp(Map.get(raw, "timestamp"))}
+
+    raw
+    |> Map.drop(["event", "timestamp"])
+    |> Enum.reduce(base, fn {k, v}, acc ->
+      Map.put(acc, String.to_atom(k), normalize_value(v))
+    end)
+  end
+
+  defp normalize_value(v) when is_map(v) do
+    for {k, val} <- v, into: %{} do
+      key = if is_binary(k), do: String.to_atom(k), else: k
+      {key, normalize_value(val)}
+    end
+  end
+
+  defp normalize_value(v) when is_list(v), do: Enum.map(v, &normalize_value/1)
+  defp normalize_value(v), do: v
+
+  defp parse_timestamp(ts) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} -> dt
+      _ -> DateTime.utc_now()
+    end
+  end
+
+  defp parse_timestamp(_), do: DateTime.utc_now()
 end
