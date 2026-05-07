@@ -64,4 +64,47 @@ defmodule SymphonyElixir.Claude.AppServerTest do
       :ok = AppServer.stop_session(session)
     end
   end
+
+  describe "integration with EventNormalizer" do
+    test "every emitted message normalizes to a non-:ignore shape" do
+      alias SymphonyElixir.Observability.EventNormalizer
+
+      {:ok, session} = AppServer.start_session(System.tmp_dir!(), opts())
+      me = self()
+      issue = %{id: "HA-1", identifier: "HA-1", title: "fake"}
+
+      {:ok, _} =
+        AppServer.run_turn(session, "hello", issue,
+          on_message: fn msg -> send(me, {:msg, msg}) end
+        )
+
+      AppServer.stop_session(session)
+
+      # Drain mailbox and verify each is normalizable.
+      msgs = drain_messages()
+      refute msgs == []
+
+      normalized = Enum.map(msgs, &EventNormalizer.normalize/1)
+
+      # turn_start, tool_call, tool_result, message, tokens, turn_end — 6 events.
+      # All should normalize to maps (none :ignore).
+      assert Enum.all?(normalized, &is_map/1),
+             "expected all events to normalize, got: #{inspect(normalized)}"
+
+      kinds = Enum.map(normalized, & &1.kind) |> Enum.sort()
+      assert :tool_call in kinds
+      assert :tool_result in kinds
+      assert :message in kinds
+      assert :tokens in kinds
+      assert :turn in kinds
+    end
+
+    defp drain_messages(acc \\ []) do
+      receive do
+        {:msg, m} -> drain_messages([m | acc])
+      after
+        100 -> Enum.reverse(acc)
+      end
+    end
+  end
 end
