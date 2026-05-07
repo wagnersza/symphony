@@ -251,50 +251,71 @@ Skills cover the full lifecycle:
 
 ### Two-phase workflow with agent-skills
 
-Rather than one workflow that jumps straight from ticket to PR, you can split the process into two dedicated workflows that hand off via ticket status:
+Rather than one workflow that jumps straight from ticket to PR, you can split the process into two dedicated workflows with a human review gate between them:
 
 ```
-Backlog / To Do
-      │
-      ▼
- [planning.md]  ← spec-driven-development + planning-and-task-breakdown
-      │
-      │  posts spec + task breakdown as a Jira comment
-      │  moves ticket to "Planned"
-      ▼
-   Planned
-      │
-      ▼
-[development.md] ← incremental-implementation + test-driven-development
-      │              + git-workflow-and-versioning + code-review-and-quality
-      │
-      │  opens PR, moves ticket to "UNDER REVIEW"
-      ▼
- UNDER REVIEW  →  human reviews  →  Done
+Backlog ──→ To Plan ──→ Review Plan ──→ Build ──→ In Progress ──→ In Review ──→ Done
+                ▲             │                                       ▲
+                │             │ (human rejects plan)                  │
+                └─────────────┘                                       │
+                                                                      │
+            [planning.md]                       [development.md] ─────┘
+            spec-driven-development             incremental-implementation
+            + planning-and-task-breakdown       + test-driven-development
+                                                + git-workflow-and-versioning
+                                                + code-review-and-quality
 ```
+
+**State responsibilities:**
+
+| State | Owner | What happens |
+|-------|-------|--------------|
+| `Backlog` | human | Idea queue — no agents touch it |
+| `To Plan` | planning agent | Reads ticket + attachments, writes spec + task breakdown, updates Summary/Description |
+| `Review Plan` | human | Reviews the plan; accept → `Build`, reject → comment + back to `To Plan` |
+| `Build` | development agent | Creates one Jira subtask per planned task, then transitions parent to `In Progress` |
+| `In Progress` | development agent | Implements subtasks (parallel where dependencies allow), each subtask flips through `In Progress → Done` |
+| `In Review` | human | Reviews the PR |
+| `Done` | — | Terminal |
+| `Cancelled` | — | Terminal |
 
 **Why two workflows?**
 
 - The planning agent reads code but writes no code — it can run on cheaper/faster settings.
-- The development agent gets a validated spec and ordered task list before it writes a single line.
+- The development agent gets a human-reviewed spec and ordered task list before it writes a single line.
+- The plan review gate catches misunderstandings before any implementation effort is spent.
 - Each phase is independently retryable without losing the other's work.
-- You can run multiple development agents in parallel against tickets that are already `Planned`.
+- You can run multiple development agents in parallel against tickets that are already `Build`.
 
-**Board setup for the two-phase workflow:**
+**Planning behaviour highlights:**
 
-Add a `Planned` status to your board (or equivalent in your tracker). Set it as:
-- Terminal state in `planning.md` (planning agent stops here)
-- Active state in `development.md` (development agent picks up here)
+- Reads all ticket comments **and image attachments** (mockups, screenshots, diagrams) and treats them as first-class requirements.
+- Updates the ticket Summary and Description in place when the original framing is vague or wrong. The Description is reserved for the durable problem statement; all progress notes go in comments.
+- Posts the spec & plan as a comment when it fits within Jira's 32,767-character comment limit; otherwise attaches it as `spec-and-plan.md` and adds a short pointer comment.
+- When the human rejects the plan and moves the ticket back to `To Plan`, the agent re-runs in **revision mode** — reads the feedback comments, edits the spec in place, and adds `Revision Notes` documenting how each feedback item was resolved.
+
+**Development behaviour highlights:**
+
+- On entering `Build`, materialises every planned task as a Jira **subtask** of the parent before writing any code. The subtask description carries the task's acceptance criteria, verification, files, dependencies, and size.
+- Only after all subtasks exist does it transition the parent to `In Progress` and start coding.
+- Honours `Depends on:` markers from the plan to parallelise safely — only unblocked subtasks with non-overlapping files run concurrently.
+- A subtask is moved to `In Progress` only while it's actively being worked. The parent stays `In Progress` for the duration of the build phase.
+- All progress, decisions, and blockers are recorded as **comments** on the parent or subtasks — never written into Descriptions.
+- When all subtasks are `Done` and self-review passes, opens a PR with the `symphony` label and transitions the parent to `In Review`.
+
+**Board setup:**
+
+Configure your tracker workflow with these statuses: `Backlog`, `To Plan`, `Review Plan`, `Build`, `In Progress`, `In Review`, `Done`, `Cancelled`. Each agent's `active_states`/`terminal_states` in the workflow file already match this scheme.
 
 **Running both workflows:**
 
 ```bash
 source .env
 
-# Terminal 1 — planning agent
+# Terminal 1 — planning agent (picks up tickets in `To Plan`)
 ./elixir/bin/symphony elixir/workflows/planning.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 
-# Terminal 2 — development agent
+# Terminal 2 — development agent (picks up tickets in `Build`)
 ./elixir/bin/symphony elixir/workflows/development.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
 ```
 

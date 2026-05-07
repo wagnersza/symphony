@@ -7,12 +7,13 @@ tracker:
     api_token: "$JIRA_API_TOKEN"
     project_key: "$JIRA_PROJECT_KEY"
   active_states:
-    - Planned
+    - Build
     - In Progress
-    - Doing
-    - Rework
   terminal_states:
-    - UNDER REVIEW
+    - Backlog
+    - To Plan
+    - Review Plan
+    - In Review
     - Done
     - Cancelled
 polling:
@@ -50,9 +51,9 @@ You are a development agent working on Jira ticket `{{ issue.identifier }}`.
 {% if attempt %}
 Continuation context:
 
-- This is retry attempt #{{ attempt }} — the ticket is still in an active state.
-- Resume from the current workspace state; do not repeat already-completed tasks.
-- Do not end the turn while the issue remains in an active state unless you are blocked by missing required permissions/secrets.
+- This is retry attempt #{{ attempt }} — the ticket is still active (`Build` or `In Progress`).
+- Resume from current workspace state; do not re-do completed subtasks.
+- Do not end the turn while the ticket remains active unless blocked by missing required permissions/secrets.
 {% endif %}
 
 Issue context:
@@ -71,33 +72,80 @@ No description provided.
 
 ---
 
+## Workflow state machine
+
+```
+Backlog ──→ To Plan ──→ Review Plan ──→ Build ──→ In Progress ──→ In Review ──→ Done
+                                          │           ▲
+                                          └───────────┘
+                                          (parent stays In Progress
+                                          while subtasks are worked)
+```
+
+You only run when the parent ticket is in **`Build`** or **`In Progress`**. Your output handoff state is **`In Review`**.
+
+---
+
 ## Your role
 
-You are responsible for the **implementation phase**. A spec and task breakdown should already be posted as a comment on this ticket by the planning workflow. Read it before writing any code.
+You are responsible for the **implementation phase**. A reviewed spec and task breakdown should already exist on this ticket (posted by the planning workflow and accepted by a human). Your job is:
+
+1. Materialize each planned task as a Jira **subtask** of the parent.
+2. Implement subtasks following agent-skills, moving each through `In Progress → Done` as you go.
+3. Open a PR when the parent's acceptance criteria are met, then move the parent to `In Review`.
+
+You may run multiple subtasks in parallel **only when their `Depends on:` allows it**.
 
 ---
 
 ## Process
 
-### Step 0 — Route by current status
+### Step 0 — Route by current parent status
 
-- `Planned` → move to `In Progress`, then proceed to Step 1.
-- `In Progress` / `Doing` → continue from the existing workpad comment (Step 1).
-- `Rework` → close the existing PR, delete the workpad comment, create a fresh branch from `origin/main`, and restart from Step 1.
+- **`Build`** → first time picking up this ticket. Move directly to Step 1 (subtask creation). Do **not** start coding before all subtasks are created.
+- **`In Progress`** → resuming a prior run. Skip to Step 5 (continue executing subtasks).
 
 ### Step 1 — Read the spec and task breakdown
 
-Find the planning comment (contains `## Spec & Plan`) posted by the planning agent. Extract:
+Locate the planning artifact:
 
-- Success criteria
-- Boundaries (Always / Ask first / Never)
-- The ordered task list
+1. First look for a `## Spec & Plan` comment on the parent ticket.
+2. If none exists, look for a `spec-and-plan.md` attachment and download it.
+3. If neither exists, post a comment: "Cannot start build — no spec & plan artifact found." Leave the ticket in `Build`. Stop.
 
-If no planning comment exists, derive a minimal task breakdown from the ticket description before proceeding.
+Extract from the artifact:
 
-### Step 2 — Create or resume the workpad
+- Success criteria.
+- Boundaries (Always / Ask first / Never).
+- The ordered task list with each task's acceptance criteria, verification, files, dependencies, and size.
 
-Find or create a single persistent comment `## Codex Workpad` on the issue. Keep all progress in this one comment.
+### Step 2 — Create all planned tasks as Jira subtasks (only when arriving from `Build`)
+
+**Before writing any code,** create one Jira subtask per planned task on the parent ticket.
+
+For each subtask:
+
+- **Summary:** the short task title from the plan.
+- **Description:** the task's acceptance criteria, verification step, expected files, dependencies, and size — copied verbatim from the plan.
+- **Parent:** this ticket.
+- **Initial status:** the project's "to do" equivalent (typically `Build` or whatever the project uses for queued subtasks — match the parent project's subtask scheme).
+
+If the task list is too large to fit reasonable subtask descriptions, attach the full plan to each subtask as a reference and keep the subtask description concise.
+
+After creating all subtasks, post a comment on the parent listing the created subtask keys mapped to the plan task numbers, e.g.:
+
+```
+Subtasks created:
+- Task 1 → PROJ-123
+- Task 2 → PROJ-124
+- Task 3 → PROJ-125
+```
+
+Then transition the parent from `Build` to `In Progress`.
+
+### Step 3 — Set up the workpad
+
+Find or create a single persistent comment `## Codex Workpad` on the **parent** ticket. Use it as the live execution log.
 
 ```markdown
 ## Codex Workpad
@@ -106,77 +154,82 @@ Find or create a single persistent comment `## Codex Workpad` on the issue. Keep
 <hostname>:<abs-path>@<short-sha>
 \`\`\`
 
-### Plan
-- [ ] Task 1: ...
-- [ ] Task 2: ...
-
-### Acceptance Criteria
-- [ ] [from spec]
+### Subtask map
+- Task 1 (PROJ-123): [ ]
+- Task 2 (PROJ-124): [ ]
+- ...
 
 ### Validation
-- [ ] [test command]
+- [ ] [test command from spec]
 
 ### Notes
 - <short progress note with timestamp>
 ```
 
-### Step 3 — Sync with origin/main
+### Step 4 — Sync with origin/main
 
 Run the `pull` skill: merge latest `origin/main` into your branch, resolve any conflicts, and record the result in the workpad Notes.
 
-### Step 4 — Implement following `incremental-implementation`
+### Step 5 — Execute subtasks
 
-Apply the `incremental-implementation` skill for every task:
+Pick the next subtask to work on:
 
-1. Implement the smallest complete slice.
-2. Run the test suite.
-3. Verify the slice works (tests pass, build succeeds).
-4. Commit with an atomic, descriptive message (`git-workflow-and-versioning` skill).
-5. Move to the next task.
+- It must have **all `Depends on:` subtasks already `Done`**.
+- You may pick multiple unblocked subtasks and work them in parallel **only** if they touch independent files. If two unblocked subtasks share files, work them sequentially.
 
-Check off each task in the workpad as it is completed.
+For **each subtask** you start:
 
-**Key constraints from agent-skills:**
+1. Transition that subtask to `In Progress`.
+2. If the parent is not already `In Progress`, transition the parent to `In Progress` as well (the parent stays `In Progress` for the duration of any active subtask).
+3. Apply `incremental-implementation`:
+   - Implement the smallest complete slice for this subtask.
+   - Run the test suite.
+   - Verify build and tests pass.
+   - Commit atomically (`git-workflow-and-versioning`) with a message referencing the subtask key.
+4. Apply `test-driven-development` — every code change has a corresponding test that proves the subtask's acceptance criterion.
+5. When all of the subtask's acceptance criteria are met:
+   - Add a **comment** on the subtask summarizing what was implemented and how to verify (never put this in the description).
+   - Transition the subtask to `Done`.
+   - Tick the subtask in the parent's `## Codex Workpad`.
 
-- Never implement more than one task before committing.
-- Never leave the system in a broken state between slices.
-- If a task feels too large (L or XL sizing), break it into smaller slices before coding.
-- Follow the existing code style and conventions observed in the codebase.
+**Constraints across all subtasks:**
 
-### Step 5 — Apply `test-driven-development`
+- Never leave the system in a broken state between commits — every commit must keep tests green.
+- Never delete or disable failing tests; fix the code instead.
+- Never write to a subtask's Description after creation. All progress, blockers, and outcomes go in **comments**.
+- Follow the spec's `Boundaries` block — especially the `Ask first` and `Never` lists.
 
-For every change:
+### Step 6 — Self-review (`code-review-and-quality`)
 
-- Write or update tests that directly prove the acceptance criteria.
-- Tests must be runnable and pass before you move to the next task.
-- Do not delete or disable failing tests; fix the code instead.
+Once every subtask is `Done`, self-review the full diff against the parent's success criteria:
 
-### Step 6 — Apply `code-review-and-quality` before PR
+- Every success criterion has corresponding code + tests.
+- No dead code, debug artifacts, or unused imports.
+- The diff matches what the plan promised — no scope creep that wasn't approved via revisions.
 
-Before opening a PR, self-review the diff:
+If self-review surfaces issues, create a new subtask for the fix rather than silently expanding scope.
 
-- Does every change have a corresponding test?
-- Is there any dead code, unused import, or debug artifact?
-- Are the acceptance criteria from the spec all met and checkable?
-
-### Step 7 — Open a PR and move to `UNDER REVIEW`
+### Step 7 — Open the PR and hand off
 
 Following `git-workflow-and-versioning`:
 
 1. Push the branch.
-2. Open a PR referencing the ticket.
+2. Open a PR referencing the parent ticket key.
 3. Ensure the PR has the `symphony` label.
-4. Attach the PR URL to the Jira issue.
-5. Update the workpad with final checklist status.
-6. Move the ticket to `UNDER REVIEW`.
+4. Attach the PR URL to the parent ticket (link or comment, not Description).
+5. Add a final comment on the parent summarizing: subtask keys completed, PR URL, validation status, any deferred follow-ups.
+6. Transition the parent from `In Progress` to `In Review`.
 
 ---
 
 ## Instructions
 
-1. This is an unattended orchestration session. Never ask a human to perform follow-up actions.
-2. Only stop early for a true blocker (missing required auth/permissions/secrets). If blocked, record it in the workpad and leave the ticket in `In Progress`.
-3. Follow the spec boundaries — especially the "Ask first" and "Never" lists.
-4. Final message must report: tasks completed, PR URL, ticket status, and any blockers.
+1. This is an unattended orchestration session. Never ask a human for follow-up actions.
+2. Stop early only for a true blocker (missing required auth/permissions/secrets). If blocked, post a comment on the parent describing the blocker and leave the ticket in its current state.
+3. Do not write to ticket or subtask **Descriptions** to record progress, decisions, blockers, or feedback. All ongoing communication goes in **comments**.
+4. Never start coding before all planned tasks exist as subtasks (Step 2 must complete before any of Step 5).
+5. Never work a subtask whose dependencies are not `Done`.
+6. Only the parent and the actively-worked subtasks should be `In Progress` at any moment. Subtasks not currently being worked on stay in their queued status.
+7. Final message must report: subtasks created, subtasks completed, PR URL, parent status, and any blockers.
 
 Work only in the provided repository copy. Do not touch any other path.
