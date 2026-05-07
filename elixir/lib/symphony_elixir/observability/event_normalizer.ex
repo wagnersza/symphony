@@ -26,8 +26,9 @@ defmodule SymphonyElixir.Observability.EventNormalizer do
       do_normalize(raw)
     rescue
       e ->
-        Logger.debug(
-          "EventNormalizer dropped payload: #{inspect(raw)} (#{inspect(e)})"
+        Logger.warning(
+          "EventNormalizer dropped payload: #{inspect(raw)} — #{Exception.message(e)}\n" <>
+            Exception.format_stacktrace(__STACKTRACE__)
         )
 
         :ignore
@@ -104,9 +105,9 @@ defmodule SymphonyElixir.Observability.EventNormalizer do
   end
 
   defp tokens(raw) do
-    input = Map.get(raw, :input, 0)
-    output = Map.get(raw, :output, 0)
-    total = Map.get(raw, :total, input + output)
+    input = raw |> Map.get(:input, 0) |> to_integer()
+    output = raw |> Map.get(:output, 0) |> to_integer()
+    total = raw |> Map.get(:total, input + output) |> to_integer()
 
     %{
       kind: :tokens,
@@ -143,12 +144,18 @@ defmodule SymphonyElixir.Observability.EventNormalizer do
   defp truncate(nil), do: ""
 
   defp truncate(str) when is_binary(str) do
-    if String.length(str) <= @summary_limit do
+    if byte_size(str) <= @summary_limit do
       str
     else
-      String.slice(str, 0, @summary_limit - 1) <> "…"
+      case String.split_at(str, @summary_limit - 1) do
+        {prefix, ""} -> prefix
+        {prefix, _rest} -> prefix <> "…"
+      end
     end
   end
 
   defp truncate(other), do: other |> inspect() |> truncate()
+
+  defp to_integer(n) when is_integer(n), do: n
+  defp to_integer(_), do: 0
 end
