@@ -7,7 +7,7 @@ tracker:
     api_token: "$JIRA_API_TOKEN"
     project_key: "$JIRA_PROJECT_KEY"
   active_states:
-    - Build
+    - To Do
     - In Progress
   terminal_states:
     - Backlog

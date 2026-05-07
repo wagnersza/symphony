@@ -11,7 +11,7 @@ tracker:
   terminal_states:
     - Backlog
     - Review Plan
-    - Build
+    - To Do
     - In Progress
     - In Review
     - Done
