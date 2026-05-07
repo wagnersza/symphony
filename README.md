@@ -249,6 +249,41 @@ Skills cover the full lifecycle:
 > /plugin install agent-skills@addy-agent-skills
 > ```
 
+### Installing the Symphony tracker plugin
+
+Symphony ships its own Claude Code plugin with the Jira and Linear API
+recipes that the planning and development workflows depend on
+(`skills/trackers/jira/SKILL.md`, `skills/trackers/linear/SKILL.md`).
+
+```
+/plugin marketplace add wagnersza/symphony
+/plugin install symphony-trackers@symphony
+```
+
+> If you don't have GitHub SSH keys configured, use the HTTPS URL:
+> ```
+> /plugin marketplace add https://github.com/wagnersza/symphony.git
+> /plugin install symphony-trackers@symphony
+> ```
+
+### Codex runtime — staging skills into the workspace
+
+If your workflow uses Codex (`codex.command: codex app-server`) instead of
+Claude, the plugin install above does not apply. Stage the skills directly
+into the workspace via the workflow's `after_create` hook:
+
+```yaml
+hooks:
+  after_create: |
+    git clone --depth 1 https://github.com/your-org/your-repo .
+    # ...other setup...
+    cp -r /path/to/symphony/skills .codex/skills
+```
+
+Replace `/path/to/symphony/` with the absolute path to your local Symphony
+checkout. The workspace will resolve `.codex/skills/trackers/jira/SKILL.md`
+the same way Claude resolves the plugin path.
+
 ### Two-phase workflow with agent-skills
 
 Rather than one workflow that jumps straight from ticket to PR, you can split the process into two dedicated workflows with a human review gate between them:
