@@ -21,8 +21,7 @@ defmodule SymphonyElixir.Observability.Timeline do
 
   @spec new(pos_integer()) :: t()
   def new(capacity \\ @default_capacity)
-
-  def new(capacity) when is_integer(capacity) and capacity > 0 do
+      when is_integer(capacity) and capacity > 0 do
     %__MODULE__{capacity: capacity, events: [], size: 0}
   end
 
@@ -33,13 +32,11 @@ defmodule SymphonyElixir.Observability.Timeline do
   @spec append(t(), event()) :: t()
   def append(%__MODULE__{capacity: capacity, events: events, size: size} = tl, event)
       when is_map(event) do
-    cond do
-      size < capacity ->
-        %{tl | events: [event | events], size: size + 1}
-
-      true ->
-        trimmed = [event | events] |> Enum.take(capacity)
-        %{tl | events: trimmed, size: capacity}
+    if size < capacity do
+      %{tl | events: [event | events], size: size + 1}
+    else
+      trimmed = [event | events] |> Enum.take(capacity)
+      %{tl | events: trimmed, size: capacity}
     end
   end
 

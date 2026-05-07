@@ -1591,8 +1591,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
          }}
       )
 
-      assert_receive {:timeline_event,
-                      %{kind: :tool_call, summary: "Read config.ex", seq: 1}}
+      assert_receive {:timeline_event, %{kind: :tool_call, summary: "Read config.ex", seq: 1}}
 
       snapshot = SymphonyElixir.Orchestrator.issue_snapshot(server, "HA-1")
 
@@ -1614,13 +1613,10 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       # Exercised via a test-only helper that directly drives the state change path.
       GenServer.call(
         server,
-        {:__test_emit_state_event, "HA-1", :jira_transition, "In Progress",
-         %{from: "To Do"}}
+        {:__test_emit_state_event, "HA-1", :jira_transition, "In Progress", %{from: "To Do"}}
       )
 
-      assert_receive {:timeline_event,
-                      %{kind: :state_change, summary: "In Progress",
-                        detail: %{sub_kind: :jira_transition, from: "To Do"}}}
+      assert_receive {:timeline_event, %{kind: :state_change, summary: "In Progress", detail: %{sub_kind: :jira_transition, from: "To Do"}}}
     end
   end
 
