@@ -253,29 +253,27 @@ defmodule SymphonyElixir.Jira.ClientTest do
 
     test "paginates across multiple pages and merges results" do
       page1 = %{
-        "startAt" => 0,
-        "maxResults" => 2,
-        "total" => 3,
         "issues" => [
           %{"key" => "ABC-1", "fields" => %{"summary" => "a", "status" => %{"name" => "Todo"}}},
           %{"key" => "ABC-2", "fields" => %{"summary" => "b", "status" => %{"name" => "Todo"}}}
-        ]
+        ],
+        "nextPageToken" => "token123",
+        "isLast" => false
       }
 
       page2 = %{
-        "startAt" => 2,
-        "maxResults" => 2,
-        "total" => 3,
         "issues" => [
           %{"key" => "ABC-3", "fields" => %{"summary" => "c", "status" => %{"name" => "Todo"}}}
-        ]
+        ],
+        "isLast" => true
       }
 
       {:ok, agent} = Agent.start_link(fn -> [page1, page2] end)
 
-      request_fun = fn :post, _url, _headers, body ->
-        assert body["jql"] =~ ~s|project = "ABC"|
-        assert body["jql"] =~ "currentUser()"
+      request_fun = fn :get, url, _headers, nil ->
+        assert url =~ "search/jql"
+        assert url =~ "project%20=%20%22ABC%22"
+        assert url =~ "currentUser()"
         response = Agent.get_and_update(agent, fn [h | t] -> {h, t} end)
         {:ok, %{status: 200, body: response}}
       end
@@ -306,9 +304,10 @@ defmodule SymphonyElixir.Jira.ClientTest do
     end
 
     test "posts a JQL search with key in (...)" do
-      request_fun = fn :post, _url, _headers, body ->
-        assert body["jql"] =~ ~s|key in ("A-1","A-2")|
-        {:ok, %{status: 200, body: %{"issues" => [%{"key" => "A-1", "fields" => %{"summary" => "s"}}], "startAt" => 0, "total" => 1, "maxResults" => 50}}}
+      request_fun = fn :get, url, _headers, nil ->
+        assert url =~ "search/jql"
+        assert url =~ ~s|key%20in%20(%22A-1%22%2C%22A-2%22)|
+        {:ok, %{status: 200, body: %{"issues" => [%{"key" => "A-1", "fields" => %{"summary" => "s"}}], "isLast" => true}}}
       end
 
       assert {:ok, [%{id: "A-1"}]} =
