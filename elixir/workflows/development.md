@@ -48,6 +48,18 @@ You are a development agent working on Jira ticket `{{ issue.identifier }}`.
 /plugin install agent-skills@addy-agent-skills
 ```
 
+**Tracker skills:** This workflow expects either:
+- the Symphony plugin installed in Claude Code (`/plugin install symphony-trackers@symphony`), **or**
+- the workspace `after_create` hook to copy the repo's `skills/` tree into
+  `.codex/skills/` for Codex sessions (`cp -r path/to/symphony/skills .codex/skills`).
+
+For every Jira/Linear API call, follow the appropriate tracker skill:
+
+- Jira: `skills/trackers/jira/SKILL.md`
+- Linear: `skills/trackers/linear/SKILL.md`
+
+Pick the section that matches your runtime (Claude → curl, Codex → tool).
+
 {% if attempt %}
 Continuation context:
 
