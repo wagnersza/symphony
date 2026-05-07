@@ -172,6 +172,7 @@ defmodule SymphonyElixir.Config.Schema do
 
     @primary_key false
     embedded_schema do
+      field(:backend, Ecto.Enum, values: [:codex, :claude], default: :codex)
       field(:max_concurrent_agents, :integer, default: 10)
       field(:max_turns, :integer, default: 20)
       field(:max_retry_backoff_ms, :integer, default: 300_000)
@@ -183,7 +184,7 @@ defmodule SymphonyElixir.Config.Schema do
       schema
       |> cast(
         attrs,
-        [:max_concurrent_agents, :max_turns, :max_retry_backoff_ms, :max_concurrent_agents_by_state],
+        [:backend, :max_concurrent_agents, :max_turns, :max_retry_backoff_ms, :max_concurrent_agents_by_state],
         empty_values: []
       )
       |> validate_number(:max_concurrent_agents, greater_than: 0)
@@ -420,7 +421,9 @@ defmodule SymphonyElixir.Config.Schema do
     tracker_jira = %{
       tracker.jira
       | api_token: resolve_secret_setting(tracker.jira.api_token, System.get_env("JIRA_API_TOKEN")),
-        email: resolve_secret_setting(tracker.jira.email, System.get_env("JIRA_EMAIL"))
+        email: resolve_secret_setting(tracker.jira.email, System.get_env("JIRA_EMAIL")),
+        site_url: resolve_secret_setting(tracker.jira.site_url, System.get_env("JIRA_SITE_URL")),
+        project_key: resolve_secret_setting(tracker.jira.project_key, System.get_env("JIRA_PROJECT_KEY"))
     }
 
     assignee_env =
