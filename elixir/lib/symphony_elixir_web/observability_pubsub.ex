@@ -1,6 +1,7 @@
 defmodule SymphonyElixirWeb.ObservabilityPubSub do
   @moduledoc """
-  PubSub helpers for observability dashboard updates.
+  PubSub helpers for observability dashboard updates and per-issue
+  activity timelines.
   """
 
   @pubsub SymphonyElixir.PubSub
@@ -22,4 +23,23 @@ defmodule SymphonyElixirWeb.ObservabilityPubSub do
         :ok
     end
   end
+
+  @spec subscribe_issue(String.t()) :: :ok | {:error, term()}
+  def subscribe_issue(issue_id) when is_binary(issue_id) do
+    Phoenix.PubSub.subscribe(@pubsub, issue_topic(issue_id))
+  end
+
+  @spec broadcast_issue_event(String.t(), map()) :: :ok
+  def broadcast_issue_event(issue_id, event) when is_binary(issue_id) and is_map(event) do
+    case Process.whereis(@pubsub) do
+      pid when is_pid(pid) ->
+        Phoenix.PubSub.broadcast(@pubsub, issue_topic(issue_id), {:timeline_event, event})
+
+      _ ->
+        :ok
+    end
+  end
+
+  @spec issue_topic(String.t()) :: String.t()
+  def issue_topic(issue_id) when is_binary(issue_id), do: "observability:issue:" <> issue_id
 end

@@ -25,4 +25,31 @@ defmodule SymphonyElixir.ObservabilityPubSubTest do
 
     assert :ok = ObservabilityPubSub.broadcast_update()
   end
+
+  describe "per-issue events" do
+    setup do
+      # Issue IDs include characters like "HA-1"; test with the same shape.
+      {:ok, issue_id: "HA-1"}
+    end
+
+    test "subscribe_issue/1 receives events broadcast to that issue", %{issue_id: id} do
+      assert :ok = ObservabilityPubSub.subscribe_issue(id)
+
+      event = %{seq: 1, summary: "hi", kind: :message, detail: %{text: "hi"}}
+      assert :ok = ObservabilityPubSub.broadcast_issue_event(id, event)
+
+      assert_receive {:timeline_event, ^event}
+    end
+
+    test "broadcast_issue_event/2 does not reach other issues' subscribers", %{issue_id: id} do
+      :ok = ObservabilityPubSub.subscribe_issue(id)
+
+      other_event = %{seq: 1, summary: "other", kind: :message, detail: %{text: "other"}}
+
+      :ok =
+        ObservabilityPubSub.broadcast_issue_event("OTHER-99", other_event)
+
+      refute_receive {:timeline_event, ^other_event}, 100
+    end
+  end
 end
