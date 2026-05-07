@@ -84,15 +84,18 @@ defmodule SymphonyElixir.AgentRunner do
     app_server = AgentBackend.app_server_module()
 
     with {:ok, session} <- app_server.start_session(workspace, worker_host: worker_host) do
+      ctx = %{app_server: app_server, session: session, workspace: workspace}
+
       try do
-        do_run_codex_turns(app_server, session, workspace, issue, codex_update_recipient, opts, issue_state_fetcher, 1, max_turns)
+        do_run_codex_turns(ctx, issue, codex_update_recipient, opts, issue_state_fetcher, 1, max_turns)
       after
         app_server.stop_session(session)
       end
     end
   end
 
-  defp do_run_codex_turns(app_server, app_session, workspace, issue, codex_update_recipient, opts, issue_state_fetcher, turn_number, max_turns) do
+  defp do_run_codex_turns(ctx, issue, codex_update_recipient, opts, issue_state_fetcher, turn_number, max_turns) do
+    %{app_server: app_server, session: app_session, workspace: workspace} = ctx
     prompt = build_turn_prompt(issue, opts, turn_number, max_turns)
 
     with {:ok, turn_session} <-
@@ -109,9 +112,7 @@ defmodule SymphonyElixir.AgentRunner do
           Logger.info("Continuing agent run for #{issue_context(refreshed_issue)} after normal turn completion turn=#{turn_number}/#{max_turns}")
 
           do_run_codex_turns(
-            app_server,
-            app_session,
-            workspace,
+            ctx,
             refreshed_issue,
             codex_update_recipient,
             opts,

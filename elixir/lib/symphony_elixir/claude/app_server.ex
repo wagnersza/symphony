@@ -24,9 +24,7 @@ defmodule SymphonyElixir.Claude.AppServer do
   def start_session(workspace, opts \\ []) when is_binary(workspace) do
     worker_host = Keyword.get(opts, :worker_host)
 
-    if not is_nil(worker_host) do
-      {:error, {:unsupported_worker_host, worker_host}}
-    else
+    if is_nil(worker_host) do
       with {:ok, executable, args, env} <- resolve_launch(workspace, opts),
            {:ok, port} <- open_port(executable, args, workspace, env),
            {:ok, buffer} <-
@@ -40,6 +38,8 @@ defmodule SymphonyElixir.Claude.AppServer do
            worker_host: nil
          }}
       end
+    else
+      {:error, {:unsupported_worker_host, worker_host}}
     end
   end
 

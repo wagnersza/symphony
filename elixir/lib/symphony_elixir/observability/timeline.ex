@@ -19,9 +19,9 @@ defmodule SymphonyElixir.Observability.Timeline do
 
   @default_capacity 500
 
-  @spec new(pos_integer()) :: t()
   def new(capacity \\ @default_capacity)
 
+  @spec new(pos_integer()) :: t()
   def new(capacity) when is_integer(capacity) and capacity > 0 do
     %__MODULE__{capacity: capacity, events: [], size: 0}
   end

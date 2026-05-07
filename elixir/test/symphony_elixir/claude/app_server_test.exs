@@ -33,7 +33,8 @@ defmodule SymphonyElixir.Claude.AppServerTest do
 
     test "returns {:error, {:unsupported_worker_host, _}} when worker_host is non-nil" do
       assert {:error, {:unsupported_worker_host, "some-host"}} =
-               AppServer.start_session(System.tmp_dir!(),
+               AppServer.start_session(
+                 System.tmp_dir!(),
                  Keyword.put(opts(), :worker_host, "some-host")
                )
     end
@@ -47,9 +48,7 @@ defmodule SymphonyElixir.Claude.AppServerTest do
       issue = %{id: "HA-1", identifier: "HA-1", title: "fake"}
 
       assert {:ok, summary} =
-               AppServer.run_turn(session, "hello", issue,
-                 on_message: fn msg -> send(me, {:msg, msg}) end
-               )
+               AppServer.run_turn(session, "hello", issue, on_message: fn msg -> send(me, {:msg, msg}) end)
 
       # Event order must match what EventNormalizer expects (string event names).
       assert_receive {:msg, %{event: "turn_start"}}, 1_500
@@ -74,9 +73,7 @@ defmodule SymphonyElixir.Claude.AppServerTest do
       issue = %{id: "HA-1", identifier: "HA-1", title: "fake"}
 
       {:ok, _} =
-        AppServer.run_turn(session, "hello", issue,
-          on_message: fn msg -> send(me, {:msg, msg}) end
-        )
+        AppServer.run_turn(session, "hello", issue, on_message: fn msg -> send(me, {:msg, msg}) end)
 
       AppServer.stop_session(session)
 
