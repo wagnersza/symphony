@@ -9,6 +9,8 @@ defmodule SymphonyElixir.Orchestrator do
 
   alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
   alias SymphonyElixir.Tracker.Issue
+  alias SymphonyElixir.Observability.{EventNormalizer, Timeline}
+  alias SymphonyElixirWeb.ObservabilityPubSub
 
   @continuation_retry_delay_ms 1_000
   @failure_retry_base_ms 10_000
@@ -190,6 +192,9 @@ defmodule SymphonyElixir.Orchestrator do
 
       running_entry ->
         {updated_running_entry, token_delta} = integrate_codex_update(running_entry, update)
+
+        updated_running_entry =
+          record_timeline_event(updated_running_entry, issue_id, update)
 
         state =
           state
@@ -1154,6 +1159,38 @@ defmodule SymphonyElixir.Orchestrator do
      }, state}
   end
 
+  @impl true
+  def handle_call({:issue_snapshot, issue_id}, _from, state) do
+    reply =
+      case Map.get(state.running, issue_id) do
+        nil ->
+          :not_running
+
+        entry ->
+          {timeline, _next_seq} = ensure_timeline(entry)
+
+          {:ok,
+           %{
+             issue_id: issue_id,
+             identifier: Map.get(entry, :identifier, issue_id),
+             state: Map.get(entry, :issue) |> then(&if is_map(&1), do: Map.get(&1, :state), else: nil),
+             started_at: Map.get(entry, :started_at),
+             turn_count: Map.get(entry, :turn_count, 0),
+             codex_input_tokens: Map.get(entry, :codex_input_tokens, 0),
+             codex_output_tokens: Map.get(entry, :codex_output_tokens, 0),
+             codex_total_tokens: Map.get(entry, :codex_total_tokens, 0),
+             last_codex_event: Map.get(entry, :last_codex_event),
+             last_codex_message: Map.get(entry, :last_codex_message),
+             last_codex_timestamp: Map.get(entry, :last_codex_timestamp),
+             workspace_path: Map.get(entry, :workspace_path),
+             worker_host: Map.get(entry, :worker_host),
+             timeline: Timeline.to_list(timeline)
+           }}
+      end
+
+    {:reply, reply, state}
+  end
+
   def handle_call(:request_refresh, _from, state) do
     now_ms = System.monotonic_time(:millisecond)
     already_due? = is_integer(state.next_poll_due_at_ms) and state.next_poll_due_at_ms <= now_ms
@@ -1652,4 +1689,49 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp integer_like(_value), do: nil
+
+  # ---- Observability timeline integration ----
+
+  defp record_timeline_event(running_entry, issue_id, raw_update) do
+    case EventNormalizer.normalize(raw_update) do
+      :ignore -> running_entry
+      event -> append_and_broadcast(running_entry, issue_id, event)
+    end
+  end
+
+  defp append_and_broadcast(running_entry, issue_id, event_input) do
+    {timeline, next_seq} = ensure_timeline(running_entry)
+    event = Map.merge(event_input, %{seq: next_seq, at: DateTime.utc_now()})
+    updated_timeline = Timeline.append(timeline, event)
+
+    ObservabilityPubSub.broadcast_issue_event(issue_id, event)
+
+    running_entry
+    |> Map.put(:timeline, updated_timeline)
+    |> Map.put(:timeline_next_seq, next_seq + 1)
+  end
+
+  defp ensure_timeline(running_entry) do
+    timeline = Map.get(running_entry, :timeline) || Timeline.new()
+    next_seq = Map.get(running_entry, :timeline_next_seq, 1)
+    {timeline, next_seq}
+  end
+
+  @spec issue_snapshot(String.t()) :: {:ok, map()} | :not_running | :unavailable
+  def issue_snapshot(issue_id), do: issue_snapshot(__MODULE__, issue_id)
+
+  @spec issue_snapshot(GenServer.server(), String.t()) ::
+          {:ok, map()} | :not_running | :unavailable
+  def issue_snapshot(server, issue_id) when is_binary(issue_id) do
+    if Process.whereis(server) do
+      try do
+        GenServer.call(server, {:issue_snapshot, issue_id}, 5_000)
+      catch
+        :exit, _ -> :unavailable
+      end
+    else
+      :unavailable
+    end
+  end
+
 end

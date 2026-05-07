@@ -1572,6 +1572,41 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     end
   end
 
+  describe "timeline integration" do
+    alias SymphonyElixirWeb.ObservabilityPubSub
+
+    test "codex_worker_update appends to the per-issue timeline and broadcasts" do
+      {:ok, server} = start_orchestrator_with_running_issue("HA-1")
+
+      :ok = ObservabilityPubSub.subscribe_issue("HA-1")
+
+      send(
+        server,
+        {:codex_worker_update, "HA-1",
+         %{
+           event: "tool_call",
+           timestamp: ~U[2026-05-07 20:00:00Z],
+           tool: "Read",
+           args: %{path: "config.ex"}
+         }}
+      )
+
+      assert_receive {:timeline_event,
+                      %{kind: :tool_call, summary: "Read config.ex", seq: 1}}
+
+      snapshot = SymphonyElixir.Orchestrator.issue_snapshot(server, "HA-1")
+
+      assert {:ok, %{timeline: [%{seq: 1, kind: :tool_call}]}} = snapshot
+    end
+
+    test "issue_snapshot/1 returns :not_running for unknown issue" do
+      {:ok, server} = start_orchestrator_with_running_issue("HA-1")
+
+      assert :not_running =
+               SymphonyElixir.Orchestrator.issue_snapshot(server, "HA-99")
+    end
+  end
+
   defp graph_samples_from_rates(rates_per_bucket) do
     bucket_ms = 25_000
 
@@ -1583,6 +1618,46 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       end)
 
     {tokens, [{timestamp, tokens} | samples]}
+  end
+
+  defp start_orchestrator_with_running_issue(issue_id) when is_binary(issue_id) do
+    orchestrator_name =
+      Module.concat(__MODULE__, :"TimelineOrchestrator_#{:erlang.unique_integer([:positive])}")
+
+    {:ok, pid} = Orchestrator.start_link(name: orchestrator_name)
+
+    on_exit(fn ->
+      if Process.alive?(pid), do: Process.exit(pid, :normal)
+    end)
+
+    initial_state = :sys.get_state(pid)
+
+    running_entry = %{
+      pid: self(),
+      ref: make_ref(),
+      identifier: issue_id,
+      issue: %Issue{id: issue_id, identifier: issue_id, state: "In Progress"},
+      session_id: nil,
+      turn_count: 0,
+      last_codex_message: nil,
+      last_codex_timestamp: nil,
+      last_codex_event: nil,
+      codex_input_tokens: 0,
+      codex_output_tokens: 0,
+      codex_total_tokens: 0,
+      codex_last_reported_input_tokens: 0,
+      codex_last_reported_output_tokens: 0,
+      codex_last_reported_total_tokens: 0,
+      started_at: DateTime.utc_now()
+    }
+
+    :sys.replace_state(pid, fn _ ->
+      initial_state
+      |> Map.put(:running, %{issue_id => running_entry})
+      |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
+    end)
+
+    {:ok, orchestrator_name}
   end
 
   defp graph_samples_for_stability_test(now_ms) do
