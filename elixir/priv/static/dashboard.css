@@ -461,3 +461,48 @@ pre,
     padding: 1rem;
   }
 }
+
+/* ---- Live timeline ---- */
+
+.timeline-card {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: var(--surface, #0f172a);
+  color: var(--on-surface, #e2e8f0);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 72px 96px 1fr;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.timeline-time { color: #94a3b8; }
+.timeline-kind { text-transform: uppercase; letter-spacing: 0.04em; }
+.timeline-summary { white-space: pre-wrap; word-break: break-word; }
+
+.timeline-row.kind-tool_call .timeline-kind { color: #38bdf8; }
+.timeline-row.kind-tool_result .timeline-kind { color: #34d399; }
+.timeline-row.kind-message .timeline-kind { color: #fbbf24; }
+.timeline-row.kind-thinking { opacity: 0.65; }
+.timeline-row.kind-thinking .timeline-kind { color: #a78bfa; }
+.timeline-row.kind-tokens .timeline-kind { color: #64748b; }
+.timeline-row.kind-turn .timeline-kind { color: #f472b6; }
+.timeline-row.kind-state_change .timeline-kind { color: #fb923c; }
+
+.timeline-link {
+  color: inherit;
+  text-decoration: underline dotted transparent;
+  transition: text-decoration-color 120ms ease;
+}
+
+.timeline-link:hover {
+  text-decoration-color: currentColor;
+}
