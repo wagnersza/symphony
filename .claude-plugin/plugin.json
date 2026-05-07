@@ -1,0 +1,12 @@
+{
+  "name": "symphony-trackers",
+  "description": "Tracker recipes (Jira, Linear) for Symphony agents — comments, attachments, subtasks, transitions.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Symphony"
+  },
+  "homepage": "https://github.com/wagnersza/symphony",
+  "repository": "https://github.com/wagnersza/symphony",
+  "license": "Apache-2.0",
+  "skills": "./skills/trackers"
+}

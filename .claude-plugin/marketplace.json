@@ -1,0 +1,19 @@
+{
+  "name": "symphony",
+  "owner": {
+    "name": "Symphony"
+  },
+  "metadata": {
+    "description": "Symphony's Claude Code plugin marketplace."
+  },
+  "plugins": [
+    {
+      "name": "symphony-trackers",
+      "source": {
+        "source": "github",
+        "repo": "wagnersza/symphony"
+      },
+      "description": "Tracker recipes (Jira, Linear) for Symphony agents."
+    }
+  ]
+}
