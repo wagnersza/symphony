@@ -1162,11 +1162,11 @@ defmodule SymphonyElixir.Orchestrator do
   @impl true
   def handle_call({:issue_snapshot, issue_id}, _from, state) do
     reply =
-      case Map.get(state.running, issue_id) do
+      case Enum.find(state.running, fn {_k, v} -> v.identifier == issue_id end) do
         nil ->
           :not_running
 
-        entry ->
+        {_k, entry} ->
           {timeline, _next_seq} = ensure_timeline(entry)
 
           {:ok,
@@ -1702,16 +1702,16 @@ defmodule SymphonyElixir.Orchestrator do
 
   # ---- Observability timeline integration ----
 
-  defp emit_state_event(state, issue_id, sub_kind, summary, detail) do
-    case Map.get(state.running, issue_id) do
+  defp emit_state_event(state, identifier, sub_kind, summary, detail) do
+    case Enum.find(state.running, fn {_k, v} -> v.identifier == identifier end) do
       nil ->
         state
 
-      entry ->
+      {key, entry} ->
         event_input = EventNormalizer.build_state_event(sub_kind, summary, detail)
-        updated_entry = append_and_broadcast(entry, issue_id, event_input)
+        updated_entry = append_and_broadcast(entry, key, event_input)
         notify_dashboard()
-        %{state | running: Map.put(state.running, issue_id, updated_entry)}
+        %{state | running: Map.put(state.running, key, updated_entry)}
     end
   end
 
@@ -1722,12 +1722,13 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
-  defp append_and_broadcast(running_entry, issue_id, event_input) do
+  defp append_and_broadcast(running_entry, _issue_id, event_input) do
     {timeline, next_seq} = ensure_timeline(running_entry)
     event = Map.merge(event_input, %{seq: next_seq, at: DateTime.utc_now()})
     updated_timeline = Timeline.append(timeline, event)
 
-    ObservabilityPubSub.broadcast_issue_event(issue_id, event)
+    identifier = Map.get(running_entry, :identifier)
+    if is_binary(identifier), do: ObservabilityPubSub.broadcast_issue_event(identifier, event)
 
     running_entry
     |> Map.put(:timeline, updated_timeline)
