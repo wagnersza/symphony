@@ -1206,6 +1206,16 @@ defmodule SymphonyElixir.Orchestrator do
      }, state}
   end
 
+  @impl true
+  def handle_call(
+        {:__test_emit_state_event, issue_id, sub_kind, summary, detail},
+        _from,
+        state
+      ) do
+    state = emit_state_event(state, issue_id, sub_kind, summary, detail)
+    {:reply, :ok, state}
+  end
+
   defp integrate_codex_update(running_entry, %{event: event, timestamp: timestamp} = update) do
     token_delta = extract_token_delta(running_entry, update)
     codex_input_tokens = Map.get(running_entry, :codex_input_tokens, 0)
@@ -1691,6 +1701,19 @@ defmodule SymphonyElixir.Orchestrator do
   defp integer_like(_value), do: nil
 
   # ---- Observability timeline integration ----
+
+  defp emit_state_event(state, issue_id, sub_kind, summary, detail) do
+    case Map.get(state.running, issue_id) do
+      nil ->
+        state
+
+      entry ->
+        event_input = EventNormalizer.build_state_event(sub_kind, summary, detail)
+        updated_entry = append_and_broadcast(entry, issue_id, event_input)
+        notify_dashboard()
+        %{state | running: Map.put(state.running, issue_id, updated_entry)}
+    end
+  end
 
   defp record_timeline_event(running_entry, issue_id, raw_update) do
     case EventNormalizer.normalize(raw_update) do

@@ -1605,6 +1605,23 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       assert :not_running =
                SymphonyElixir.Orchestrator.issue_snapshot(server, "HA-99")
     end
+
+    test "emit_state_event/4 appends a :state_change event and broadcasts" do
+      {:ok, server} = start_orchestrator_with_running_issue("HA-1")
+
+      :ok = ObservabilityPubSub.subscribe_issue("HA-1")
+
+      # Exercised via a test-only helper that directly drives the state change path.
+      GenServer.call(
+        server,
+        {:__test_emit_state_event, "HA-1", :jira_transition, "In Progress",
+         %{from: "To Do"}}
+      )
+
+      assert_receive {:timeline_event,
+                      %{kind: :state_change, summary: "In Progress",
+                        detail: %{sub_kind: :jira_transition, from: "To Do"}}}
+    end
   end
 
   defp graph_samples_from_rates(rates_per_bucket) do
