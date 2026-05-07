@@ -222,6 +222,86 @@ Full worked examples with hooks and agent instructions are in `elixir/workflows/
 
 ---
 
+## Using agent-skills
+
+[agent-skills](https://github.com/addyosmani/agent-skills) is a collection of production-grade engineering skills for AI coding agents. Each skill encodes the workflow a senior engineer follows for a specific phase of development — speccing, planning, implementing, testing, reviewing, and shipping. Read more on [Addy Osmani's blog](https://addyosmani.com/blog/agent-skills/).
+
+Skills cover the full lifecycle:
+
+| Phase | Skills used |
+|-------|-------------|
+| Define | `spec-driven-development` |
+| Plan | `planning-and-task-breakdown` |
+| Build | `incremental-implementation`, `test-driven-development`, `context-engineering` |
+| Review | `code-review-and-quality`, `security-and-hardening` |
+| Ship | `git-workflow-and-versioning`, `ci-cd-and-automation` |
+
+### Installing agent-skills
+
+```bash
+/plugin marketplace add addyosmani/agent-skills
+/plugin install agent-skills@addy-agent-skills
+```
+
+> If you don't have GitHub SSH keys configured, use the HTTPS URL:
+> ```bash
+> /plugin marketplace add https://github.com/addyosmani/agent-skills.git
+> /plugin install agent-skills@addy-agent-skills
+> ```
+
+### Two-phase workflow with agent-skills
+
+Rather than one workflow that jumps straight from ticket to PR, you can split the process into two dedicated workflows that hand off via ticket status:
+
+```
+Backlog / To Do
+      │
+      ▼
+ [planning.md]  ← spec-driven-development + planning-and-task-breakdown
+      │
+      │  posts spec + task breakdown as a Jira comment
+      │  moves ticket to "Planned"
+      ▼
+   Planned
+      │
+      ▼
+[development.md] ← incremental-implementation + test-driven-development
+      │              + git-workflow-and-versioning + code-review-and-quality
+      │
+      │  opens PR, moves ticket to "UNDER REVIEW"
+      ▼
+ UNDER REVIEW  →  human reviews  →  Done
+```
+
+**Why two workflows?**
+
+- The planning agent reads code but writes no code — it can run on cheaper/faster settings.
+- The development agent gets a validated spec and ordered task list before it writes a single line.
+- Each phase is independently retryable without losing the other's work.
+- You can run multiple development agents in parallel against tickets that are already `Planned`.
+
+**Board setup for the two-phase workflow:**
+
+Add a `Planned` status to your board (or equivalent in your tracker). Set it as:
+- Terminal state in `planning.md` (planning agent stops here)
+- Active state in `development.md` (development agent picks up here)
+
+**Running both workflows:**
+
+```bash
+source .env
+
+# Terminal 1 — planning agent
+./elixir/bin/symphony elixir/workflows/planning.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
+
+# Terminal 2 — development agent
+./elixir/bin/symphony elixir/workflows/development.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
+```
+
+The workflow files are in `elixir/workflows/planning.md` and `elixir/workflows/development.md`. Both use Jira by default — swap the `tracker` block for Linear if needed (see the Linear example above).
+
+---
+
 ## Running
 
 Load your credentials and start Symphony with a workflow file:
