@@ -1,30 +1,25 @@
 # Symphony
 
-Symphony polls Jira for tickets and runs autonomous coding agents against your repositories. Each agent gets an isolated workspace, clones the target repo, and works the ticket end-to-end.
+Symphony watches your issue tracker and autonomously works tickets end-to-end using Claude. Each ticket gets an isolated workspace, a fresh clone of the target repository, and a Claude agent that implements, tests, opens a PR, and moves the ticket through your workflow — unattended.
 
 ## How it works
 
-1. Symphony polls Jira for tickets in the configured active states.
-2. For each eligible ticket, it creates an isolated workspace directory.
+1. Symphony polls your tracker (Jira or Linear) for tickets in configured active states.
+2. For each eligible ticket it creates an isolated workspace directory.
 3. It clones the target repository into that workspace (`hooks.after_create`).
-4. It launches a Claude agent inside the workspace with the ticket context as the prompt.
-5. The agent works until the ticket reaches a terminal state or the turn limit is reached.
-6. When a ticket moves to a terminal state, Symphony stops the agent and cleans up.
+4. It launches a Claude agent with the ticket context as the prompt.
+5. The agent works until the ticket reaches a terminal state or the turn limit is hit.
+6. When done, Symphony cleans up the workspace.
 
-There is one Symphony instance per repository. For example, a two-repo setup might look like:
-
-| Instance | Repository | Workflow file |
-|----------|-----------|---------------|
-| API | `your-org/your-api-repo` | `elixir/workflows/api.md` |
-| Frontend | `your-org/your-frontend-repo` | `elixir/workflows/frontend.md` |
+One Symphony process handles one workflow file (one tracker project + one repository). Run multiple processes in parallel to cover multiple repos.
 
 ---
 
 ## Prerequisites
 
-### 1. Elixir runtime
+### Elixir runtime
 
-Install [mise](https://mise.jdx.dev/) to manage the Elixir/Erlang versions:
+Install [mise](https://mise.jdx.dev/) to manage Elixir/Erlang versions:
 
 ```bash
 brew install mise
@@ -38,7 +33,7 @@ mise trust
 mise install
 ```
 
-### 2. Claude CLI
+### Claude CLI
 
 Install and authenticate [Claude Code](https://claude.ai/code):
 
@@ -47,7 +42,7 @@ npm install -g @anthropic-ai/claude-code
 claude login
 ```
 
-### 3. GitHub CLI
+### GitHub CLI
 
 Required for the agent to open PRs and interact with GitHub:
 
@@ -58,48 +53,13 @@ gh auth login
 
 ---
 
-## Configuration
+## Install
 
-### Jira credentials
-
-Copy `.env.example` to `.env` at the root of this repo and fill in your values:
+Clone and build the Symphony binary:
 
 ```bash
-cp .env.example .env
-```
-
-```env
-JIRA_API_TOKEN=your-jira-api-token
-JIRA_EMAIL=you@your-company.com
-JIRA_SITE_URL=https://your-org.atlassian.net
-JIRA_PROJECT_KEY=YOUR_PROJECT_KEY
-```
-
-**How to get a Jira API token:**
-
-1. Go to [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-2. Click **Create API token**
-3. Give it a name (e.g. `symphony`) and copy the token
-
-> The `.env` file is gitignored and never committed.
-
-### Optional: limit to your own tickets
-
-To make a Symphony instance only pick up tickets assigned to you, add `assignee` to the workflow file's front matter:
-
-```yaml
-tracker:
-  assignee: "you@your-company.com"   # or your Jira accountId
-```
-
----
-
-## Build
-
-Build the Symphony binary once (or after pulling changes):
-
-```bash
-cd elixir
+git clone https://github.com/wagnersza/symphony
+cd symphony/elixir
 mise exec -- mix setup
 mise exec -- mix build
 ```
@@ -108,74 +68,207 @@ This produces `elixir/bin/symphony`.
 
 ---
 
-## Running
+## Tracker setup
 
-Load your credentials and start the instance for the repository you want to run:
+### Jira
 
-```bash
-source .env
+Create a `.env` file at the root of this repo (it is gitignored):
 
-# API
-./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
-
-# Frontend
-./elixir/bin/symphony elixir/workflows/frontend.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
+```env
+JIRA_API_TOKEN=your-jira-api-token
+JIRA_EMAIL=you@your-company.com
+JIRA_SITE_URL=https://your-org.atlassian.net
+JIRA_PROJECT_KEY=YOUR_PROJECT_KEY
 ```
 
-To run multiple instances at the same time, open one terminal per repository.
+**Getting a Jira API token:**
 
-### Optional flags
+1. Go to [Atlassian API tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+2. Click **Create API token**, give it a name (e.g. `symphony`), and copy the value
 
-```bash
-# Enable the web dashboard at http://localhost:4000
-./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails --port 4000
-
-# Write logs to a custom directory
-./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails --logs-root ~/logs/symphony-api
-```
-
----
-
-## Jira board setup
-
-Symphony expects the following statuses on your board. Tickets in `active_states` are eligible for dispatch; tickets in `terminal_states` are ignored.
+**Board statuses Symphony expects by default:**
 
 | Status | Role |
 |--------|------|
-| `To Do` | Queued — agent will pick up and move to `In Progress` |
+| `To Do` | Queued — agent picks up and moves to `In Progress` |
 | `In Progress` | Agent is actively working |
-| `Doing` | Also treated as active (same as In Progress) |
+| `Doing` | Treated the same as `In Progress` |
 | `UNDER REVIEW` | PR submitted — waiting for human review |
-| `Done` | Terminal — agent will not touch |
-| `Backlog` | Terminal — agent will not touch |
+| `Done` | Terminal — not touched |
+| `Backlog` | Terminal — not touched |
 
-To route a ticket to a specific repository, use a Jira label matching the instance name (e.g. `api`, `frontend`) and start only the corresponding Symphony instance. Without a label filter, any running instance will pick up any eligible ticket.
+You can override `active_states` and `terminal_states` in your workflow file to match your board.
 
----
+### Linear
 
-## Workspaces
+Add to your `.env` file:
 
-Each instance stores its workspaces in a separate directory:
+```env
+LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxxxxxx
+LINEAR_PROJECT_SLUG=your-project-slug
+```
 
-| Instance | Workspace root |
-|----------|---------------|
-| API | `~/code/symphony-workspaces/api` |
-| Frontend | `~/code/symphony-workspaces/frontend` |
+**Getting a Linear API key:**
 
-Workspaces persist across runs. A workspace for a ticket is reused on retry so the agent can continue from where it left off.
+1. Go to **Settings → API → Personal API keys**
+2. Click **Create key**, give it a name (e.g. `symphony`), and copy the value
+
+**Finding your project slug:**
+
+Open a Linear issue URL — it looks like `https://linear.app/your-org/issue/PROJ-123`. The slug is the segment after your org name (e.g. `your-org`). You can also use the team identifier shown on your Linear workspace settings.
+
+**Default Linear states Symphony uses:**
+
+| Status | Role |
+|--------|------|
+| `Todo` | Queued |
+| `In Progress` | Agent is actively working |
+| `Done` | Terminal |
+| `Cancelled` / `Canceled` | Terminal |
 
 ---
 
 ## Workflow files
 
-Each workflow file (`elixir/workflows/*.md`) has two parts:
+A workflow file is a Markdown file with a YAML front matter block that configures the tracker, workspace, agent limits, and hooks — followed by a Jinja2 prompt template that is sent to the agent for each ticket.
 
-- **YAML front matter** — tracker config, polling interval, workspace root, hooks, agent limits, and Claude settings.
-- **Markdown body** — the prompt template sent to the agent, with access to `{{ issue.identifier }}`, `{{ issue.title }}`, `{{ issue.state }}`, `{{ issue.description }}`, and `{{ issue.labels }}`.
+Available template variables: `{{ issue.identifier }}`, `{{ issue.title }}`, `{{ issue.state }}`, `{{ issue.description }}`, `{{ issue.labels }}`, `{{ issue.url }}`, `{{ attempt }}`.
 
-To customize behavior for a repository, edit its workflow file. Changes are picked up on the next polling cycle without restarting Symphony.
+### Jira example
 
-See `elixir/WORKFLOW.example.md` for a minimal example, and the files under `elixir/workflows/` for fuller examples with hooks and agent posture instructions.
+```yaml
+---
+tracker:
+  kind: jira
+  jira:
+    site_url: "$JIRA_SITE_URL"
+    email: "$JIRA_EMAIL"
+    api_token: "$JIRA_API_TOKEN"
+    project_key: "$JIRA_PROJECT_KEY"
+  active_states:
+    - To Do
+    - In Progress
+  terminal_states:
+    - Done
+    - Backlog
+polling:
+  interval_ms: 30000
+workspace:
+  root: ~/code/symphony-workspaces/myrepo
+hooks:
+  after_create: |
+    git clone --depth 1 https://github.com/your-org/your-repo .
+    npm install
+agent:
+  max_concurrent_agents: 3
+  max_turns: 20
+codex:
+  command: claude -p --dangerously-skip-permissions
+  approval_policy: never
+  thread_sandbox: workspace-write
+  turn_sandbox_policy:
+    type: workspaceWrite
+---
+
+You are working on Jira ticket `{{ issue.identifier }}`: {{ issue.title }}.
+
+...
+```
+
+See `elixir/WORKFLOW.jira.example.md` for a complete Jira starter template.
+
+### Linear example
+
+```yaml
+---
+tracker:
+  kind: linear
+  linear:
+    api_key: "$LINEAR_API_KEY"
+    project_slug: "$LINEAR_PROJECT_SLUG"
+  active_states:
+    - Todo
+    - In Progress
+  terminal_states:
+    - Done
+    - Cancelled
+polling:
+  interval_ms: 30000
+workspace:
+  root: ~/code/symphony-workspaces/myrepo
+hooks:
+  after_create: |
+    git clone --depth 1 https://github.com/your-org/your-repo .
+    npm install
+agent:
+  max_concurrent_agents: 3
+  max_turns: 20
+codex:
+  command: claude -p --dangerously-skip-permissions
+  approval_policy: never
+  thread_sandbox: workspace-write
+  turn_sandbox_policy:
+    type: workspaceWrite
+---
+
+You are working on Linear issue `{{ issue.identifier }}`: {{ issue.title }}.
+
+...
+```
+
+See `elixir/WORKFLOW.linear.example.md` for a complete Linear starter template.
+
+Full worked examples with hooks and agent instructions are in `elixir/workflows/`.
+
+---
+
+## Running
+
+Load your credentials and start Symphony with a workflow file:
+
+```bash
+source .env
+./elixir/bin/symphony my-workflow.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
+```
+
+To run multiple repos in parallel, open one terminal per workflow file:
+
+```bash
+# Terminal 1 — backend
+source .env && ./elixir/bin/symphony elixir/workflows/api.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
+
+# Terminal 2 — frontend
+source .env && ./elixir/bin/symphony elixir/workflows/frontend.md --i-understand-that-this-will-be-running-without-the-usual-guardrails
+```
+
+### Optional flags
+
+```bash
+# Enable the web dashboard at http://localhost:4000
+./elixir/bin/symphony my-workflow.md --i-understand-that-this-will-be-running-without-the-usual-guardrails --port 4000
+
+# Write logs to a custom directory
+./elixir/bin/symphony my-workflow.md --i-understand-that-this-will-be-running-without-the-usual-guardrails --logs-root ~/logs/symphony
+```
+
+---
+
+## Front matter reference
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `tracker.kind` | — | `jira` or `linear` |
+| `tracker.active_states` | tracker-specific | Ticket states that trigger agent dispatch |
+| `tracker.terminal_states` | tracker-specific | Ticket states that stop the agent |
+| `tracker.assignee` | — | Optional — limit to one assignee (email or account ID) |
+| `polling.interval_ms` | `30000` | How often to poll the tracker |
+| `workspace.root` | system tmp | Directory where workspaces are created |
+| `hooks.after_create` | — | Shell script run after workspace is created (clone repo here) |
+| `hooks.before_remove` | — | Shell script run before workspace is deleted |
+| `agent.max_concurrent_agents` | `10` | Max parallel agents for this workflow |
+| `agent.max_turns` | `20` | Max agent turns per ticket attempt |
+| `codex.command` | `codex app-server` | Command used to launch the agent |
+| `codex.approval_policy` | `reject` | `never` to run fully unattended |
 
 ---
 
