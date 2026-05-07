@@ -408,6 +408,18 @@ source .env && ./elixir/bin/symphony elixir/workflows/frontend.md --i-understand
 
 ---
 
+## Claude backend (optional)
+
+To use Claude instead of Codex:
+
+1. Set `agent.backend: :claude` in your workflow file.
+2. Install the Node wrapper deps: `cd elixir/priv/claude_agent && npm ci`.
+3. Ensure your `~/.claude/` is populated (Claude CLI logged in).
+
+See `docs/superpowers/specs/2026-05-07-claude-agent-backend-design.md` for protocol details.
+
+---
+
 ## License
 
 [Apache License 2.0](LICENSE)

@@ -1,4 +1,4 @@
-.PHONY: help all setup deps build fmt fmt-check lint test coverage ci dialyzer e2e
+.PHONY: help all setup deps build fmt fmt-check lint test coverage ci dialyzer e2e test-claude-wrapper
 
 MIX ?= mix
 
@@ -43,5 +43,8 @@ ci:
 	$(MAKE) lint
 	$(MAKE) coverage
 	$(MAKE) dialyzer
+
+test-claude-wrapper:
+	cd priv/claude_agent && npm test
 
 all: ci
