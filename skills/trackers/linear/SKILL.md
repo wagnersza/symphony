@@ -373,6 +373,194 @@ mutation FileUpload(
 }
 ```
 
+---
+
+## Via Claude (curl)
+
+The Codex `linear_graphql` tool is unavailable when the agent runtime is
+`claude -p`. Use the Linear GraphQL endpoint over HTTPS directly.
+
+### Auth
+
+The orchestrator passes `$LINEAR_API_KEY` into your shell. Every call uses
+the personal-API-key header:
+
+```
+Authorization: $LINEAR_API_KEY
+Content-Type: application/json
+```
+
+> Linear's personal API keys are sent as the literal value of `Authorization`
+> (no `Bearer` prefix). OAuth tokens differ; this skill assumes personal keys.
+
+### Helper: a curl wrapper for one GraphQL call
+
+```bash
+linear_gql() {
+  local query="$1"
+  local variables="${2:-{}}"
+  curl -s -X POST \
+    -H "Authorization: $LINEAR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -nc --arg q "$query" --argjson v "$variables" '{query:$q, variables:$v}')" \
+    "https://api.linear.app/graphql"
+}
+```
+
+Use `jq` to read responses:
+
+```bash
+linear_gql 'query($id:String!){ issue(id:$id){ id identifier title } }' \
+  '{"id":"PROJ-123"}' | jq .
+```
+
+### Read an issue with comments and attachments
+
+```graphql
+query IssueWithContext($id: String!) {
+  issue(id: $id) {
+    id
+    identifier
+    title
+    description
+    state { id name type }
+    comments(first: 50) { nodes { id body createdAt user { name } } }
+    attachments { nodes { id title url sourceType } }
+  }
+}
+```
+
+For image attachments, follow the URL with curl and the Linear API key in the
+Authorization header. Save the file locally, then `Read` its path so Claude's
+vision parses it.
+
+### Create / edit a comment
+
+```graphql
+mutation CreateComment($issueId: String!, $body: String!) {
+  commentCreate(input: { issueId: $issueId, body: $body }) {
+    success
+    comment { id }
+  }
+}
+```
+
+```graphql
+mutation UpdateComment($id: String!, $body: String!) {
+  commentUpdate(id: $id, input: { body: $body }) {
+    success
+    comment { id }
+  }
+}
+```
+
+### Edit summary (title) and description
+
+```graphql
+mutation UpdateIssue($id: String!, $title: String, $description: String) {
+  issueUpdate(id: $id, input: { title: $title, description: $description }) {
+    success
+    issue { id title }
+  }
+}
+```
+
+Pass only the fields you want to change.
+
+### List team workflow states and move an issue
+
+```graphql
+query TeamStates($id: String!) {
+  issue(id: $id) {
+    team {
+      states { nodes { id name type } }
+    }
+  }
+}
+```
+
+```graphql
+mutation MoveIssue($id: String!, $stateId: String!) {
+  issueUpdate(id: $id, input: { stateId: $stateId }) {
+    success
+    issue { id state { id name } }
+  }
+}
+```
+
+### Create a subtask under a parent
+
+Linear models subtasks as issues with a `parentId`. Look up the parent's
+`teamId` first:
+
+```graphql
+query Parent($id: String!) {
+  issue(id: $id) { id team { id } }
+}
+```
+
+Then create the child:
+
+```graphql
+mutation CreateSubtask(
+  $teamId: String!,
+  $parentId: String!,
+  $title: String!,
+  $description: String,
+  $stateId: String
+) {
+  issueCreate(input: {
+    teamId: $teamId,
+    parentId: $parentId,
+    title: $title,
+    description: $description,
+    stateId: $stateId
+  }) {
+    success
+    issue { id identifier }
+  }
+}
+```
+
+### Upload an attachment (3-step Linear upload)
+
+1. **Request a signed upload URL.**
+
+   ```graphql
+   mutation FileUpload($filename: String!, $contentType: String!, $size: Int!) {
+     fileUpload(filename: $filename, contentType: $contentType, size: $size) {
+       success
+       uploadFile {
+         uploadUrl
+         assetUrl
+         headers { key value }
+       }
+     }
+   }
+   ```
+
+2. **PUT the bytes to `uploadUrl`** with the headers from the response. The
+   signed URL already authorizes the upload — do not add `$LINEAR_API_KEY`.
+
+   ```bash
+   curl -s -X PUT \
+     -H "Content-Type: text/markdown" \
+     --data-binary @spec-and-plan.md \
+     "$UPLOAD_URL"
+   ```
+
+3. **Reference `assetUrl`** in a comment body or via `attachmentLinkURL` if you
+   want a first-class attachment record on the issue.
+
+### Linear comment body sizing
+
+Linear comment bodies accept long markdown without a hard 32k cap, but
+keep individual comments scannable. If a body would be larger than ~15k
+characters, attach a file (3-step flow above) and link it from a short pointer
+comment — same posture as the Jira flow.
+
+---
+
 ## Usage rules
 
 - Use `linear_graphql` for comment edits, uploads, and ad-hoc Linear API
