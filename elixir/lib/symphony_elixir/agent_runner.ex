@@ -82,8 +82,35 @@ defmodule SymphonyElixir.AgentRunner do
     issue_state_fetcher = Keyword.get(opts, :issue_state_fetcher, &Tracker.fetch_issue_states_by_ids/1)
 
     app_server = AgentBackend.app_server_module()
+    backend = Config.settings!().agent.backend
 
-    with {:ok, session} <- app_server.start_session(workspace, worker_host: worker_host) do
+    Logger.info(
+      "Agent backend selected backend=#{inspect(backend)} module=#{inspect(app_server)} #{issue_context(issue)}"
+    )
+
+    start_opts = [
+      worker_host: worker_host,
+      issue_id: Map.get(issue, :id),
+      issue_identifier: Map.get(issue, :identifier)
+    ]
+
+    with {:ok, session} <- (
+      result = app_server.start_session(workspace, start_opts)
+
+      case result do
+        {:ok, _session} ->
+          Logger.info(
+            "AppServer.start_session succeeded for #{issue_context(issue)} backend=#{inspect(backend)}"
+          )
+
+        {:error, reason} ->
+          Logger.error(
+            "AppServer.start_session failed: #{inspect(reason)} backend=#{inspect(app_server)}"
+          )
+      end
+
+      result
+    ) do
       ctx = %{app_server: app_server, session: session, workspace: workspace}
 
       try do
@@ -97,6 +124,8 @@ defmodule SymphonyElixir.AgentRunner do
   defp do_run_codex_turns(ctx, issue, codex_update_recipient, opts, issue_state_fetcher, turn_number, max_turns) do
     %{app_server: app_server, session: app_session, workspace: workspace} = ctx
     prompt = build_turn_prompt(issue, opts, turn_number, max_turns)
+
+    Logger.debug("Starting turn #{issue_context(issue)} turn=#{turn_number}/#{max_turns}")
 
     with {:ok, turn_session} <-
            app_server.run_turn(
