@@ -105,7 +105,7 @@ defmodule SymphonyElixir.AgentRunner do
 
         {:error, reason} ->
           Logger.error(
-            "AppServer.start_session failed: #{inspect(reason)} backend=#{inspect(app_server)}"
+            "AppServer.start_session failed: #{inspect(reason)} backend=#{inspect(backend)}"
           )
       end
 
