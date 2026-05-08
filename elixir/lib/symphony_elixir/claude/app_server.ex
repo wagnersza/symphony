@@ -192,22 +192,29 @@ defmodule SymphonyElixir.Claude.AppServer do
     resolved_args = args_with_workspace(args, workspace)
 
     Logger.info(
-      "Spawning Claude wrapper executable=#{executable} args=#{inspect(resolved_args)} cwd=#{workspace} env_keys=#{inspect(Enum.map(env, &elem(&1, 0)))}"
+      "Spawning Claude wrapper executable=#{executable} args=#{inspect(resolved_args)} cwd=#{workspace} env_overrides=#{inspect(Enum.map(env, &elem(&1, 0)))}"
     )
 
-    port =
-      Port.open(
-        {:spawn_executable, to_charlist(executable)},
-        [
-          :binary,
-          :exit_status,
-          :stderr_to_stdout,
-          {:args, Enum.map(resolved_args, &to_charlist/1)},
-          {:cd, to_charlist(workspace)},
-          {:env, Enum.map(env, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)},
-          {:line, 1_048_576}
-        ]
-      )
+    port_opts = [
+      :binary,
+      :exit_status,
+      :stderr_to_stdout,
+      {:args, Enum.map(resolved_args, &to_charlist/1)},
+      {:cd, to_charlist(workspace)},
+      {:line, 1_048_576}
+    ]
+
+    port_opts =
+      case env do
+        [] ->
+          port_opts
+
+        _ ->
+          port_opts ++
+            [{:env, Enum.map(env, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)}]
+      end
+
+    port = Port.open({:spawn_executable, to_charlist(executable)}, port_opts)
 
     {:ok, port}
   rescue
