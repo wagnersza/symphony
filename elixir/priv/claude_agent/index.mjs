@@ -43,7 +43,7 @@ async function loadSdk() {
 async function runTurn(sdk, { prompt, session_id, workspace }) {
   emit({ event: "turn_start", turn: 1 });
 
-  const options = { cwd: workspace };
+  const options = { cwd: workspace, permissionMode: "bypassPermissions" };
   if (session_id) options.resume = session_id;
 
   let sessionId = null;
