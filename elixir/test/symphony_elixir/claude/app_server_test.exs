@@ -43,10 +43,10 @@ defmodule SymphonyElixir.Claude.AppServerTest do
       assert {:ok, session} =
                AppServer.start_session(
                  System.tmp_dir!(),
-                 Keyword.merge(opts(), issue_id: "HA-42", issue_identifier: "HA-42")
+                 Keyword.merge(opts(), issue_id: "uuid-abc-123", issue_identifier: "HA-42")
                )
 
-      assert session.issue_id == "HA-42"
+      assert session.issue_id == "uuid-abc-123"
       assert session.issue_identifier == "HA-42"
 
       :ok = AppServer.stop_session(session)
