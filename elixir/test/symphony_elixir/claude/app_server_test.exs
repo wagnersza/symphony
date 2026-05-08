@@ -132,8 +132,6 @@ defmodule SymphonyElixir.Claude.AppServerTest do
     import ExUnit.CaptureLog
 
     test "emits info-level start/turn/completed logs with issue and session context" do
-      Logger.configure(level: :info)
-
       issue = %{id: "HA-99", identifier: "HA-99", title: "fake"}
       start_opts = Keyword.merge(opts(), issue_id: issue.id, issue_identifier: issue.identifier)
 
@@ -154,8 +152,6 @@ defmodule SymphonyElixir.Claude.AppServerTest do
     end
 
     test "logs start_session failure with reason" do
-      Logger.configure(level: :info)
-
       log =
         capture_log(fn ->
           assert {:error, {:wrapper_startup_failed, _, _}} =

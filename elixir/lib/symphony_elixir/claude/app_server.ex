@@ -112,9 +112,7 @@ defmodule SymphonyElixir.Claude.AppServer do
       {:ok, %{session_id: sid} = summary} ->
         updated_session = %{session | session_id: sid}
 
-        Logger.info(
-          "Claude session completed #{log_context(updated_session)} tokens_in=#{Map.get(summary, :tokens_in, 0)} tokens_out=#{Map.get(summary, :tokens_out, 0)}"
-        )
+        Logger.info("Claude session completed #{log_context(updated_session)}")
 
         {:ok, summary}
 
