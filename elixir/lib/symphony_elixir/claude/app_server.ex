@@ -15,7 +15,9 @@ defmodule SymphonyElixir.Claude.AppServer do
           buffer: String.t(),
           workspace: Path.t(),
           session_id: String.t() | nil,
-          worker_host: nil
+          worker_host: nil,
+          issue_id: String.t() | nil,
+          issue_identifier: String.t() | nil
         }
 
   @default_ready_timeout_ms 10_000
@@ -23,6 +25,8 @@ defmodule SymphonyElixir.Claude.AppServer do
   @spec start_session(Path.t(), keyword()) :: {:ok, session()} | {:error, term()}
   def start_session(workspace, opts \\ []) when is_binary(workspace) do
     worker_host = Keyword.get(opts, :worker_host)
+    issue_id = Keyword.get(opts, :issue_id)
+    issue_identifier = Keyword.get(opts, :issue_identifier)
 
     if is_nil(worker_host) do
       with {:ok, executable, args, env} <- resolve_launch(workspace, opts),
@@ -35,7 +39,9 @@ defmodule SymphonyElixir.Claude.AppServer do
            buffer: buffer,
            workspace: workspace,
            session_id: nil,
-           worker_host: nil
+           worker_host: nil,
+           issue_id: issue_id,
+           issue_identifier: issue_identifier
          }}
       end
     else
@@ -81,7 +87,7 @@ defmodule SymphonyElixir.Claude.AppServer do
   defp resolve_launch(_workspace, opts) do
     case Keyword.get(opts, :executable) do
       nil ->
-        case System.find_executable("node") do
+        case find_node() do
           nil -> {:error, :node_not_found}
           node -> {:ok, node, default_node_args(), default_env()}
         end
@@ -93,13 +99,48 @@ defmodule SymphonyElixir.Claude.AppServer do
     end
   end
 
+  # System.find_executable/1 uses the process PATH which may not include mise
+  # shims when running as an escript. Fall back to well-known install locations.
+  defp find_node do
+    System.find_executable("node") ||
+      Enum.find_value(
+        [
+          Path.expand("~/.local/share/mise/installs/node/20/bin/node"),
+          Path.expand("~/.local/share/mise/installs/node/20.20.2/bin/node"),
+          Path.expand("~/.nvm/versions/node/v20.*/bin/node"),
+          "/usr/local/bin/node",
+          "/opt/homebrew/bin/node"
+        ],
+        fn path ->
+          expanded = Path.wildcard(path) |> List.first() || path
+          if File.exists?(expanded), do: expanded
+        end
+      )
+  end
+
   defp default_node_args do
-    script =
+    script = resolve_script_path()
+    [script]
+  end
+
+  # When running as an escript, :code.priv_dir/1 returns a path inside the zip
+  # archive that doesn't exist on disk. Fall back to a path relative to the
+  # escript binary instead.
+  defp resolve_script_path do
+    priv_candidate =
       :code.priv_dir(:symphony_elixir)
       |> to_string()
       |> Path.join("claude_agent/index.mjs")
 
-    [script]
+    if File.exists?(priv_candidate) do
+      priv_candidate
+    else
+      :escript.script_name()
+      |> to_string()
+      |> Path.dirname()
+      |> Path.join("../priv/claude_agent/index.mjs")
+      |> Path.expand()
+    end
   end
 
   defp default_env, do: []

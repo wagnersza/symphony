@@ -38,6 +38,27 @@ defmodule SymphonyElixir.Claude.AppServerTest do
                  Keyword.put(opts(), :worker_host, "some-host")
                )
     end
+
+    test "stores :issue_id and :issue_identifier on the session map when provided" do
+      assert {:ok, session} =
+               AppServer.start_session(
+                 System.tmp_dir!(),
+                 Keyword.merge(opts(), issue_id: "HA-42", issue_identifier: "HA-42")
+               )
+
+      assert session.issue_id == "HA-42"
+      assert session.issue_identifier == "HA-42"
+
+      :ok = AppServer.stop_session(session)
+    end
+
+    test "defaults :issue_id and :issue_identifier to nil when not provided" do
+      assert {:ok, session} = AppServer.start_session(System.tmp_dir!(), opts())
+      assert session.issue_id == nil
+      assert session.issue_identifier == nil
+
+      :ok = AppServer.stop_session(session)
+    end
   end
 
   describe "run_turn/4" do
