@@ -1,3 +1,5 @@
 .worktrees/
 .env
 log/
+elixir/workflows/planning.md
+elixir/workflows/development.md
