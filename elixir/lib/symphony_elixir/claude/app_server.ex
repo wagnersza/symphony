@@ -303,11 +303,8 @@ defmodule SymphonyElixir.Claude.AppServer do
         read_until_turn_end(port, "", on_message)
 
       {:error, _} ->
-        if debug_mode?() do
-          Logger.debug("Claude wrapper stderr: #{line}")
-        else
-          Logger.warning("Claude wrapper emitted unparseable line: #{inspect(line)}")
-        end
+        Logger.warning("Claude wrapper emitted unparseable line: #{inspect(line)}")
+        if debug_mode?(), do: Logger.debug("Claude wrapper stderr raw: #{line}")
 
         read_until_turn_end(port, "", on_message)
     end
@@ -315,11 +312,8 @@ defmodule SymphonyElixir.Claude.AppServer do
 
   defp maybe_log_wrapper_line(line) do
     if debug_mode?() do
-      preview = line |> String.slice(0, 200)
-      Logger.debug("Claude wrapper line: #{preview}")
+      Logger.debug("Claude wrapper line: #{String.slice(line, 0, 200)}")
     end
-
-    :ok
   end
 
   defp debug_mode? do
