@@ -1,6 +1,8 @@
 defmodule SymphonyElixir.Claude.AppServerTest do
   use ExUnit.Case, async: true
 
+  require Logger
+
   alias SymphonyElixir.Claude.AppServer
 
   @fake_wrapper Path.expand("../../support/fake_claude_wrapper.sh", __DIR__)
@@ -123,6 +125,48 @@ defmodule SymphonyElixir.Claude.AppServerTest do
       after
         100 -> Enum.reverse(acc)
       end
+    end
+  end
+
+  describe "lifecycle logging" do
+    import ExUnit.CaptureLog
+
+    test "emits info-level start/turn/completed logs with issue and session context" do
+      Logger.configure(level: :info)
+
+      issue = %{id: "HA-99", identifier: "HA-99", title: "fake"}
+      start_opts = Keyword.merge(opts(), issue_id: issue.id, issue_identifier: issue.identifier)
+
+      log =
+        capture_log(fn ->
+          {:ok, session} = AppServer.start_session(System.tmp_dir!(), start_opts)
+          {:ok, _summary} = AppServer.run_turn(session, "hello", issue, on_message: fn _ -> :ok end)
+          :ok = AppServer.stop_session(session)
+        end)
+
+      assert log =~ "Claude session started"
+      assert log =~ "issue_id=HA-99"
+      assert log =~ "issue_identifier=HA-99"
+      assert log =~ "Claude turn starting"
+      assert log =~ "Claude session completed"
+      assert log =~ "session_id=sess_fake_1"
+      assert log =~ "Claude session stopped"
+    end
+
+    test "logs start_session failure with reason" do
+      Logger.configure(level: :info)
+
+      log =
+        capture_log(fn ->
+          assert {:error, {:wrapper_startup_failed, _, _}} =
+                   AppServer.start_session(
+                     System.tmp_dir!(),
+                     opts(%{"FAKE_WRAPPER_MODE" => "startup_fail"})
+                   )
+        end)
+
+      assert log =~ "Claude session failed to start"
+      assert log =~ "reason="
     end
   end
 end

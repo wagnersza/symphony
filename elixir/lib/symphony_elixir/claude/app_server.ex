@@ -33,16 +33,28 @@ defmodule SymphonyElixir.Claude.AppServer do
            {:ok, port} <- open_port(executable, args, workspace, env),
            {:ok, buffer} <-
              await_ready(port, Keyword.get(opts, :ready_timeout_ms, @default_ready_timeout_ms)) do
-        {:ok,
-         %{
-           port: port,
-           buffer: buffer,
-           workspace: workspace,
-           session_id: nil,
-           worker_host: nil,
-           issue_id: issue_id,
-           issue_identifier: issue_identifier
-         }}
+        session = %{
+          port: port,
+          buffer: buffer,
+          workspace: workspace,
+          session_id: nil,
+          worker_host: nil,
+          issue_id: issue_id,
+          issue_identifier: issue_identifier
+        }
+
+        Logger.info(
+          "Claude session started issue_id=#{issue_id} issue_identifier=#{issue_identifier} workspace=#{workspace}"
+        )
+
+        {:ok, session}
+      else
+        {:error, reason} = err ->
+          Logger.error(
+            "Claude session failed to start issue_id=#{issue_id} issue_identifier=#{issue_identifier} reason=#{inspect(reason)}"
+          )
+
+          err
       end
     else
       {:error, {:unsupported_worker_host, worker_host}}
@@ -50,6 +62,21 @@ defmodule SymphonyElixir.Claude.AppServer do
   end
 
   @spec stop_session(session() | %{port: port()}) :: :ok
+  def stop_session(%{port: port, issue_id: _, issue_identifier: _, session_id: _} = session)
+      when is_port(port) do
+    Logger.info("Claude session stopped #{log_context(session)}")
+
+    send_command(port, %{type: "stop"})
+
+    receive do
+      {^port, {:exit_status, _}} -> :ok
+    after
+      2_000 ->
+        Port.close(port)
+        :ok
+    end
+  end
+
   def stop_session(%{port: port}) when is_port(port) do
     send_command(port, %{type: "stop"})
 
@@ -69,6 +96,8 @@ defmodule SymphonyElixir.Claude.AppServer do
   def run_turn(%{port: port} = session, prompt, _issue, opts) when is_binary(prompt) do
     on_message = Keyword.get(opts, :on_message, fn _ -> :ok end)
 
+    Logger.info("Claude turn starting #{log_context(session)}")
+
     cmd = %{type: "start", prompt: prompt, max_turns: 1}
 
     cmd =
@@ -79,7 +108,23 @@ defmodule SymphonyElixir.Claude.AppServer do
 
     send_command(port, cmd)
 
-    read_until_turn_end(port, session.buffer, on_message)
+    case read_until_turn_end(port, session.buffer, on_message) do
+      {:ok, %{session_id: sid} = summary} ->
+        updated_session = %{session | session_id: sid}
+
+        Logger.info(
+          "Claude session completed #{log_context(updated_session)} tokens_in=#{Map.get(summary, :tokens_in, 0)} tokens_out=#{Map.get(summary, :tokens_out, 0)}"
+        )
+
+        {:ok, summary}
+
+      {:error, reason} = err ->
+        Logger.warning(
+          "Claude session ended with error #{log_context(session)} reason=#{inspect(reason)}"
+        )
+
+        err
+    end
   end
 
   # --- private helpers ---
@@ -284,4 +329,10 @@ defmodule SymphonyElixir.Claude.AppServer do
   end
 
   defp parse_timestamp(_), do: DateTime.utc_now()
+
+  defp log_context(%{issue_id: issue_id, issue_identifier: issue_identifier, session_id: session_id}) do
+    "issue_id=#{issue_id} issue_identifier=#{issue_identifier} session_id=#{session_id}"
+  end
+
+  defp log_context(_), do: "issue_id= issue_identifier= session_id="
 end
