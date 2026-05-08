@@ -189,13 +189,20 @@ defmodule SymphonyElixir.Claude.AppServer do
   defp default_env, do: []
 
   defp open_port(executable, args, workspace, env) do
+    resolved_args = args_with_workspace(args, workspace)
+
+    Logger.info(
+      "Spawning Claude wrapper executable=#{executable} args=#{inspect(resolved_args)} cwd=#{workspace} env_keys=#{inspect(Enum.map(env, &elem(&1, 0)))}"
+    )
+
     port =
       Port.open(
         {:spawn_executable, to_charlist(executable)},
         [
           :binary,
           :exit_status,
-          {:args, Enum.map(args_with_workspace(args, workspace), &to_charlist/1)},
+          :stderr_to_stdout,
+          {:args, Enum.map(resolved_args, &to_charlist/1)},
           {:cd, to_charlist(workspace)},
           {:env, Enum.map(env, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)},
           {:line, 1_048_576}
@@ -274,6 +281,8 @@ defmodule SymphonyElixir.Claude.AppServer do
   end
 
   defp handle_line(port, line, on_message) do
+    maybe_log_wrapper_line(line)
+
     case Jason.decode(line) do
       {:ok, %{"event" => event} = ev} when is_binary(event) ->
         message = normalize_event(ev)
@@ -294,9 +303,27 @@ defmodule SymphonyElixir.Claude.AppServer do
         read_until_turn_end(port, "", on_message)
 
       {:error, _} ->
-        Logger.warning("Claude wrapper emitted unparseable line: #{inspect(line)}")
+        if debug_mode?() do
+          Logger.debug("Claude wrapper stderr: #{line}")
+        else
+          Logger.warning("Claude wrapper emitted unparseable line: #{inspect(line)}")
+        end
+
         read_until_turn_end(port, "", on_message)
     end
+  end
+
+  defp maybe_log_wrapper_line(line) do
+    if debug_mode?() do
+      preview = line |> String.slice(0, 200)
+      Logger.debug("Claude wrapper line: #{preview}")
+    end
+
+    :ok
+  end
+
+  defp debug_mode? do
+    Application.get_env(:symphony_elixir, :debug_mode, false) == true
   end
 
   defp normalize_event(%{"event" => event} = raw) do
