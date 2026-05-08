@@ -1,6 +1,8 @@
 defmodule SymphonyElixir.CLITest do
   use ExUnit.Case, async: true
 
+  require Logger
+
   alias SymphonyElixir.CLI
 
   @ack_flag "--i-understand-that-this-will-be-running-without-the-usual-guardrails"
@@ -135,5 +137,64 @@ defmodule SymphonyElixir.CLITest do
     }
 
     assert :ok = CLI.evaluate([@ack_flag, "WORKFLOW.md"], deps)
+  end
+
+  test "--debug sets Logger level to :debug and :debug_mode app env to true" do
+    previous_level = Logger.level()
+    previous_debug_mode = Application.get_env(:symphony_elixir, :debug_mode)
+
+    on_exit(fn ->
+      Logger.configure(level: previous_level)
+
+      case previous_debug_mode do
+        nil -> Application.delete_env(:symphony_elixir, :debug_mode)
+        value -> Application.put_env(:symphony_elixir, :debug_mode, value)
+      end
+    end)
+
+    # Start from a known-off state
+    Logger.configure(level: :info)
+    Application.delete_env(:symphony_elixir, :debug_mode)
+
+    deps = %{
+      file_regular?: fn _path -> true end,
+      set_workflow_file_path: fn _path -> :ok end,
+      set_logs_root: fn _path -> :ok end,
+      set_server_port_override: fn _port -> :ok end,
+      ensure_all_started: fn -> {:ok, [:symphony_elixir]} end
+    }
+
+    assert :ok = CLI.evaluate([@ack_flag, "--debug", "WORKFLOW.md"], deps)
+    assert Logger.level() == :debug
+    assert Application.get_env(:symphony_elixir, :debug_mode) == true
+  end
+
+  test "without --debug, Logger level and :debug_mode app env are unchanged" do
+    previous_level = Logger.level()
+    previous_debug_mode = Application.get_env(:symphony_elixir, :debug_mode)
+
+    on_exit(fn ->
+      Logger.configure(level: previous_level)
+
+      case previous_debug_mode do
+        nil -> Application.delete_env(:symphony_elixir, :debug_mode)
+        value -> Application.put_env(:symphony_elixir, :debug_mode, value)
+      end
+    end)
+
+    Logger.configure(level: :info)
+    Application.delete_env(:symphony_elixir, :debug_mode)
+
+    deps = %{
+      file_regular?: fn _path -> true end,
+      set_workflow_file_path: fn _path -> :ok end,
+      set_logs_root: fn _path -> :ok end,
+      set_server_port_override: fn _port -> :ok end,
+      ensure_all_started: fn -> {:ok, [:symphony_elixir]} end
+    }
+
+    assert :ok = CLI.evaluate([@ack_flag, "WORKFLOW.md"], deps)
+    assert Logger.level() == :info
+    assert Application.get_env(:symphony_elixir, :debug_mode) in [nil, false]
   end
 end

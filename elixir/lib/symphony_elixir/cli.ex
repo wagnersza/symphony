@@ -5,8 +5,16 @@ defmodule SymphonyElixir.CLI do
 
   alias SymphonyElixir.LogFile
 
+  require Logger
+
   @acknowledgement_switch :i_understand_that_this_will_be_running_without_the_usual_guardrails
-  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer]
+
+  @switches [
+    {@acknowledgement_switch, :boolean},
+    logs_root: :string,
+    port: :integer,
+    debug: :boolean
+  ]
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
@@ -19,6 +27,8 @@ defmodule SymphonyElixir.CLI do
 
   @spec main([String.t()]) :: no_return()
   def main(args) do
+    load_dotenv()
+
     case evaluate(args) do
       :ok ->
         wait_for_shutdown()
@@ -35,14 +45,16 @@ defmodule SymphonyElixir.CLI do
       {opts, [], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps) do
+             :ok <- maybe_set_server_port(opts, deps),
+             :ok <- maybe_enable_debug_mode(opts) do
           run(Path.expand("WORKFLOW.md"), deps)
         end
 
       {opts, [workflow_path], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps) do
+             :ok <- maybe_set_server_port(opts, deps),
+             :ok <- maybe_enable_debug_mode(opts) do
           run(workflow_path, deps)
         end
 
@@ -72,7 +84,7 @@ defmodule SymphonyElixir.CLI do
 
   @spec usage_message() :: String.t()
   defp usage_message do
-    "Usage: symphony [--logs-root <path>] [--port <port>] [path-to-WORKFLOW.md]"
+    "Usage: symphony [--debug] [--logs-root <path>] [--port <port>] [path-to-WORKFLOW.md]"
   end
 
   @spec runtime_deps() :: deps()
@@ -167,6 +179,65 @@ defmodule SymphonyElixir.CLI do
   defp set_server_port_override(port) when is_integer(port) and port >= 0 do
     Application.put_env(:symphony_elixir, :server_port_override, port)
     :ok
+  end
+
+  defp maybe_enable_debug_mode(opts) do
+    if Keyword.get(opts, :debug, false) do
+      Logger.configure(level: :debug)
+      Application.put_env(:symphony_elixir, :debug_mode, true)
+    end
+
+    :ok
+  end
+
+  # Load a .env file by searching from the current working directory upward
+  # until one is found (or the filesystem root is reached).
+  # Variables already set in the environment take precedence (no overwrite).
+  defp load_dotenv do
+    case find_dotenv(File.cwd!()) do
+      nil ->
+        :ok
+
+      dotenv_path ->
+        dotenv_path
+        |> File.read!()
+        |> String.split("\n", trim: true)
+        |> Enum.each(fn line ->
+          line = String.trim(line)
+
+          with false <- String.starts_with?(line, "#"),
+               false <- line == "",
+               [key, value] <- String.split(line, "=", parts: 2),
+               key = String.trim(key),
+               value = String.trim(value) |> strip_quotes(),
+               nil <- System.get_env(key) do
+            System.put_env(key, value)
+          end
+        end)
+    end
+  end
+
+  defp find_dotenv(dir) do
+    candidate = Path.join(dir, ".env")
+
+    cond do
+      File.regular?(candidate) ->
+        candidate
+
+      dir == "/" or dir == "." or Path.dirname(dir) == dir ->
+        nil
+
+      true ->
+        find_dotenv(Path.dirname(dir))
+    end
+  end
+
+  defp strip_quotes(value) do
+    case value do
+      "\"" <> rest -> String.trim_trailing(rest, "\"")
+      "'" <> rest -> String.trim_trailing(rest, "'")
+      other -> other
+    end
   end
 
   @spec wait_for_shutdown() :: no_return()
