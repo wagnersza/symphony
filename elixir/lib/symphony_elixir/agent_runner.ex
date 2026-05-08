@@ -90,27 +90,11 @@ defmodule SymphonyElixir.AgentRunner do
 
     start_opts = [
       worker_host: worker_host,
-      issue_id: Map.get(issue, :id),
-      issue_identifier: Map.get(issue, :identifier)
+      issue_id: issue.id,
+      issue_identifier: issue.identifier
     ]
 
-    with {:ok, session} <- (
-      result = app_server.start_session(workspace, start_opts)
-
-      case result do
-        {:ok, _session} ->
-          Logger.info(
-            "AppServer.start_session succeeded for #{issue_context(issue)} backend=#{inspect(backend)}"
-          )
-
-        {:error, reason} ->
-          Logger.error(
-            "AppServer.start_session failed: #{inspect(reason)} backend=#{inspect(backend)}"
-          )
-      end
-
-      result
-    ) do
+    with {:ok, session} <- start_session_with_log(app_server, workspace, start_opts, issue, backend) do
       ctx = %{app_server: app_server, session: session, workspace: workspace}
 
       try do
@@ -229,6 +213,20 @@ defmodule SymphonyElixir.AgentRunner do
     state_name
     |> String.trim()
     |> String.downcase()
+  end
+
+  defp start_session_with_log(app_server, workspace, start_opts, issue, backend) do
+    result = app_server.start_session(workspace, start_opts)
+
+    case result do
+      {:ok, _} ->
+        Logger.info("AppServer.start_session succeeded for #{issue_context(issue)} backend=#{inspect(backend)}")
+
+      {:error, reason} ->
+        Logger.error("AppServer.start_session failed: #{inspect(reason)} backend=#{inspect(backend)}")
+    end
+
+    result
   end
 
   defp issue_context(%Issue{id: issue_id, identifier: identifier}) do
